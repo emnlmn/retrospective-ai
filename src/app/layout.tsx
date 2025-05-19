@@ -26,7 +26,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased font-sans`}>
+{/* The body tag now starts on the next line without leading spaces to prevent whitespace text node issues. */}
+<body className={`${geistSans.variable} ${geistMono.variable} antialiased font-sans`}>
         <UserProvider>
           {children}
         </UserProvider>
