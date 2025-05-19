@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { PlusCircle, ArrowRight, Eye } from 'lucide-react';
+import { PlusCircle, ArrowRight } from 'lucide-react'; // Removed Eye icon, not used
 import type { BoardData } from '@/lib/types';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import CreateBoardDialog from '@/components/board/CreateBoardDialog';
@@ -20,16 +20,15 @@ export default function HomePage() {
   }, []);
 
   if (!mounted) {
-    // Basic skeleton loader to avoid flash of "No Boards Yet" and layout shift
     return (
         <div className="space-y-8 animate-pulse">
             <div className="flex justify-between items-center">
                 <div className="h-10 bg-muted rounded w-1/3"></div>
-                <div className="h-10 bg-primary rounded w-48"></div>
+                <div className="h-10 bg-primary/80 rounded w-48"></div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[1,2,3].map(i => (
-                    <div key={i} className="bg-card shadow-lg rounded-lg p-6 space-y-4">
+                    <div key={i} className="bg-card shadow-lg rounded-lg p-6 space-y-4 border border-border">
                         <div className="h-6 bg-muted rounded w-3/4"></div>
                         <div className="h-4 bg-muted rounded w-1/2"></div>
                         <div className="h-8 bg-muted rounded w-full"></div>
@@ -67,8 +66,8 @@ export default function HomePage() {
           {boards.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((board) => (
             <Card key={board.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col bg-card border border-border">
               <CardHeader>
-                <CardTitle className="text-xl truncate font-semibold text-primary">{board.title}</CardTitle>
-                <CardDescription className="text-xs">
+                <CardTitle className="text-xl truncate font-semibold text-card-foreground">{board.title}</CardTitle>
+                <CardDescription className="text-xs text-muted-foreground">
                   Created on {format(new Date(board.createdAt), "MMMM d, yyyy 'at' h:mm a")}
                 </CardDescription>
               </CardHeader>
@@ -93,7 +92,7 @@ export default function HomePage() {
         isOpen={isCreateBoardDialogOpen}
         onClose={() => setIsCreateBoardDialogOpen(false)}
         onBoardCreated={(newBoard) => {
-          setBoards((prevBoards) => [newBoard, ...prevBoards]); // Add to start for immediate visibility
+          setBoards((prevBoards) => [newBoard, ...prevBoards]);
           setIsCreateBoardDialogOpen(false);
         }}
       />

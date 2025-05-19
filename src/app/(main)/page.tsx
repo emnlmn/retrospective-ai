@@ -16,11 +16,29 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true); // Ensure localStorage is accessed only on client
+    setMounted(true); 
   }, []);
 
   if (!mounted) {
-    return <div className="text-center py-10">Loading boards...</div>; // Or a skeleton loader
+    // Basic skeleton loader to avoid flash of "No Boards Yet" and layout shift
+    return (
+        <div className="space-y-8 animate-pulse">
+            <div className="flex justify-between items-center">
+                <div className="h-10 bg-muted rounded w-1/3"></div>
+                <div className="h-10 bg-primary/80 rounded w-48"></div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1,2,3].map(i => (
+                    <div key={i} className="bg-card shadow-lg rounded-lg p-6 space-y-4 border border-border">
+                        <div className="h-6 bg-muted rounded w-3/4"></div>
+                        <div className="h-4 bg-muted rounded w-1/2"></div>
+                        <div className="h-8 bg-muted rounded w-full"></div>
+                        <div className="h-10 bg-primary/80 rounded w-full"></div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
   }
 
   return (
@@ -33,13 +51,13 @@ export default function HomePage() {
       </div>
 
       {boards.length === 0 ? (
-        <Card className="text-center py-10 shadow-lg">
+        <Card className="text-center py-10 shadow-lg bg-card border border-border">
           <CardHeader>
             <CardTitle className="text-2xl text-muted-foreground">No Boards Yet!</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="mb-4 text-muted-foreground">Start by creating your first retrospective board.</p>
-            <Button onClick={() => setIsCreateBoardDialogOpen(true)} variant="outline" size="lg">
+            <Button onClick={() => setIsCreateBoardDialogOpen(true)} variant="default" size="lg" className="shadow-md hover:shadow-lg transition-shadow">
               <PlusCircle className="mr-2 h-5 w-5" /> Create First Board
             </Button>
           </CardContent>
@@ -47,10 +65,10 @@ export default function HomePage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {boards.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((board) => (
-            <Card key={board.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col">
+            <Card key={board.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col bg-card border border-border">
               <CardHeader>
-                <CardTitle className="text-xltruncate">{board.title}</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-xl truncate font-semibold text-card-foreground">{board.title}</CardTitle>
+                <CardDescription className="text-xs text-muted-foreground">
                   Created on {format(new Date(board.createdAt), "MMMM d, yyyy 'at' h:mm a")}
                 </CardDescription>
               </CardHeader>
@@ -60,7 +78,7 @@ export default function HomePage() {
                 </p>
               </CardContent>
               <CardFooter>
-                <Button asChild variant="default" className="w-full">
+                <Button asChild variant="default" className="w-full shadow hover:shadow-md transition-shadow">
                   <Link href={`/boards/${board.id}`}>
                     Open Board <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
@@ -75,7 +93,7 @@ export default function HomePage() {
         isOpen={isCreateBoardDialogOpen}
         onClose={() => setIsCreateBoardDialogOpen(false)}
         onBoardCreated={(newBoard) => {
-          setBoards((prevBoards) => [...prevBoards, newBoard]);
+          setBoards((prevBoards) => [newBoard, ...prevBoards]);
           setIsCreateBoardDialogOpen(false);
         }}
       />

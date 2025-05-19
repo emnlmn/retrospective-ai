@@ -31,7 +31,6 @@ export default function BoardPage() {
   useEffect(() => {
     const board = boards.find(b => b.id === boardId);
     if (board) {
-      // Ensure board has all columns, even if old data structure
       const sanitizedBoard = {
         ...board,
         columns: {
@@ -42,8 +41,9 @@ export default function BoardPage() {
         cards: board.cards || {},
       };
       setCurrentBoard(sanitizedBoard);
-    } else if (boards.length > 0) { // Only redirect if boards are loaded and specific board not found
-      // router.push('/'); // Board not found
+    } else if (boards.length > 0) { 
+      // console.warn("Board not found, consider redirecting or showing explicit message.");
+      // Potentially redirect: router.push('/'); 
       // toast({ title: "Error", description: "Board not found.", variant: "destructive" });
     }
     setIsLoading(false);
@@ -66,7 +66,7 @@ export default function BoardPage() {
       userName: user.name,
       createdAt: new Date().toISOString(),
       upvotes: [],
-      order: (currentBoard.columns[columnId].cardIds.length || 0) + 1,
+      order: (currentBoard.columns[columnId].cardIds.length || 0) + 1, // Simplistic order, consider re-ordering on add
     };
 
     const updatedBoard = {
@@ -79,10 +79,17 @@ export default function BoardPage() {
         ...currentBoard.columns,
         [columnId]: {
           ...currentBoard.columns[columnId],
-          cardIds: [...currentBoard.columns[columnId].cardIds, newCardId],
+          // Add new card to the beginning of the list for better UX
+          cardIds: [newCardId, ...currentBoard.columns[columnId].cardIds],
         },
       },
     };
+    // Re-assign order after adding card
+    updatedBoard.columns[columnId].cardIds.forEach((id, index) => {
+      if(updatedBoard.cards[id]) {
+        updatedBoard.cards[id].order = index;
+      }
+    });
     updateBoardData(updatedBoard);
   };
 
@@ -105,7 +112,7 @@ export default function BoardPage() {
   const handleDeleteCard = (cardId: string, columnId: ColumnId) => {
     if (!currentBoard) return;
     
-    const { [cardId]: _, ...remainingCards } = currentBoard.cards; // Remove card from cards object
+    const { [cardId]: _, ...remainingCards } = currentBoard.cards; 
 
     const updatedBoard = {
       ...currentBoard,
@@ -149,27 +156,32 @@ export default function BoardPage() {
     const draggedCard = updatedBoard.cards[draggedCardId];
     if (!draggedCard) return;
 
-    // Remove from source column
     const sourceCardIds = [...updatedBoard.columns[sourceColumnId].cardIds];
     sourceCardIds.splice(sourceCardIds.indexOf(draggedCardId), 1);
-    updatedBoard.columns[sourceColumnId].cardIds = sourceCardIds;
-
-    // Add to destination column
-    const destCardIds = [...updatedBoard.columns[destColumnId].cardIds];
+    
+    const destCardIds = sourceColumnId === destColumnId ? [...sourceCardIds] : [...updatedBoard.columns[destColumnId].cardIds];
     destCardIds.splice(destinationIndex, 0, draggedCardId);
-    updatedBoard.columns[destColumnId].cardIds = destCardIds;
+
+    updatedBoard = {
+      ...updatedBoard,
+      columns: {
+        ...updatedBoard.columns,
+        [sourceColumnId]: { ...updatedBoard.columns[sourceColumnId], cardIds: sourceCardIds },
+        [destColumnId]: { ...updatedBoard.columns[destColumnId], cardIds: destCardIds },
+      }
+    };
     
     // Re-order cards in destination column
-    destCardIds.forEach((id, index) => {
+    updatedBoard.columns[destColumnId].cardIds.forEach((id, index) => {
       if(updatedBoard.cards[id]) {
-        updatedBoard.cards[id].order = index + 1;
+        updatedBoard.cards[id].order = index;
       }
     });
     // Re-order cards in source column if different
     if (sourceColumnId !== destColumnId) {
-      sourceCardIds.forEach((id, index) => {
+      updatedBoard.columns[sourceColumnId].cardIds.forEach((id, index) => {
         if(updatedBoard.cards[id]) {
-          updatedBoard.cards[id].order = index + 1;
+          updatedBoard.cards[id].order = index;
         }
       });
     }
@@ -201,11 +213,11 @@ export default function BoardPage() {
           const newCard: CardData = {
             id: newCardId,
             content: itemContent,
-            userId: user.id, // Or a generic AI user? For now, current user
+            userId: user.id, 
             userName: `${user.name} (AI Suggested)`,
             createdAt: new Date().toISOString(),
             upvotes: [],
-            order: (boardAfterAISuggestions.columns.actionItems.cardIds.length || 0) + 1,
+            order: 0, // Will be re-ordered
           };
           boardAfterAISuggestions = {
             ...boardAfterAISuggestions,
@@ -214,10 +226,16 @@ export default function BoardPage() {
               ...boardAfterAISuggestions.columns,
               actionItems: {
                 ...boardAfterAISuggestions.columns.actionItems,
-                cardIds: [...boardAfterAISuggestions.columns.actionItems.cardIds, newCardId],
+                cardIds: [newCardId, ...boardAfterAISuggestions.columns.actionItems.cardIds],
               },
             },
           };
+        });
+        // Re-order action items column
+        boardAfterAISuggestions.columns.actionItems.cardIds.forEach((id, index) => {
+          if(boardAfterAISuggestions.cards[id]) {
+            boardAfterAISuggestions.cards[id].order = index;
+          }
         });
         updateBoardData(boardAfterAISuggestions);
         toast({ title: "AI Suggestions Added", description: `${result.actionItems.length} action items added to the 'Action Items' column.` });
@@ -238,13 +256,13 @@ export default function BoardPage() {
   const columnIds = Object.keys(DEFAULT_COLUMNS_CONFIG) as ColumnId[];
 
   return (
-    <div className="h-full flex flex-col space-y-6">
+    <div className="h-full flex flex-col space-y-4">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3">
             <Button variant="outline" size="icon" asChild aria-label="Back to boards">
                 <Link href="/"><ArrowLeft className="h-5 w-5" /></Link>
             </Button>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground truncate" title={currentBoard.title}>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground truncate" title={currentBoard.title}>
             {currentBoard.title}
             </h1>
         </div>
@@ -271,14 +289,17 @@ export default function BoardPage() {
         </AlertDialog>
       </div>
 
-      <ScrollArea className="flex-grow pb-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-w-[900px] md:min-w-full">
+      <ScrollArea className="flex-grow -mx-1"> {/* Negative margin to allow columns to use full space */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-[800px] md:min-w-full px-1">
           {columnIds.map(columnId => (
             <BoardColumnClient
               key={columnId}
               columnId={columnId}
               title={DEFAULT_COLUMNS_CONFIG[columnId].title}
-              cards={currentBoard.columns[columnId].cardIds.map(id => currentBoard.cards[id]).filter(Boolean).sort((a,b) => a.order - b.order)}
+              cards={currentBoard.columns[columnId].cardIds
+                .map(id => currentBoard.cards[id])
+                .filter(Boolean)
+                .sort((a,b) => a.order - b.order)}
               onAddCard={handleAddCard}
               onUpdateCard={handleUpdateCard}
               onDeleteCard={handleDeleteCard}

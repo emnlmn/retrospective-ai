@@ -6,7 +6,7 @@ import RetroCard from './RetroCard';
 import { Button } from '@/components/ui/button';
 import { PlusCircle } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card as ShadCard, CardContent, CardFooter } from '@/components/ui/card'; // Renamed to avoid conflict
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface BoardColumnClientProps {
@@ -34,7 +34,7 @@ export default function BoardColumnClient({
 }: BoardColumnClientProps) {
   const [newCardContent, setNewCardContent] = useState('');
   const [isAddingCard, setIsAddingCard] = useState(false);
-  const [draggedItem, setDraggedItem] = useState<CardData | null>(null);
+  const [draggedItem, setDraggedItem] = useState<CardData & { sourceColumnId?: ColumnId } | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<ColumnId | null>(null);
 
   const handleAddCardSubmit = () => {
@@ -45,85 +45,94 @@ export default function BoardColumnClient({
     }
   };
 
-  const handleDragStart = (card: CardData) => {
-    setDraggedItem(card);
+  const handleDragStart = (card: CardData, srcColId: ColumnId) => {
+    setDraggedItem({ ...card, sourceColumnId: srcColId });
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); // Necessary to allow dropping
+    e.preventDefault(); 
     setDragOverColumn(columnId);
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (draggedItem) {
-      // Find the card being dropped over, if any, to determine index
+    if (draggedItem && draggedItem.sourceColumnId) {
       const dropTargetElement = e.target instanceof HTMLElement ? e.target.closest('[data-card-id]') : null;
       const dropTargetId = dropTargetElement?.getAttribute('data-card-id');
       
-      let destinationIndex = cards.length; // Default to end of list
+      let destinationIndex = cards.length; 
       if (dropTargetId) {
         const targetCardIndex = cards.findIndex(c => c.id === dropTargetId);
         if (targetCardIndex !== -1) {
-          // Determine if dropping above or below the target card based on mouse position
           const targetRect = dropTargetElement!.getBoundingClientRect();
           const isDroppingInUpperHalf = e.clientY < targetRect.top + targetRect.height / 2;
           destinationIndex = isDroppingInUpperHalf ? targetCardIndex : targetCardIndex + 1;
         }
       }
-      
-      // Find source column from current cards data
-      // This is a simplification; in a real app, source columnId would be part of draggedItem state.
-      // For now, we assume draggedItem contains enough info or we search.
-      // For this implementation, the parent board page manages state and passes correct sourceColumnId.
-      // Let's assume draggedItem will contain sourceColumnId.
-      // For the provided onDragEnd, we need to find the source column from the parent.
-      // Here, we can just call onDragEnd with the current columnId as destination.
-      // The parent `BoardPage` actually knows the source column through its state management.
-      // To correctly determine source column: the card's original column should be part of its data or drag context.
-      // This component doesn't know the sourceColumnId directly, it's passed by BoardPage.
-      // The `draggedItem.columnId` (if we add it) or finding it in the main board state is needed.
-      // For now, BoardPage's onDragEnd will get the source from its own structure.
-      // This component provides destination (columnId) and destinationIndex.
-      
-      // This part is tricky. The sourceColumnId is not directly available here.
-      // The parent `BoardPage` needs to handle finding the source column.
-      // For simplicity, let's assume `draggedItem` has a property like `currentColumnId` when `handleDragStart` is called.
-      // This is not ideal. A better way is to have a global drag context or pass sourceColumnId explicitly.
-      // Let's assume `draggedItem` contains `sourceColumnId` set during `onDragStart` in RetroCard.
-      const sourceColId = (draggedItem as any).sourceColumnId as ColumnId; // This is a placeholder.
-      if (sourceColId) {
-         onDragEnd(draggedItem.id, sourceColId, columnId, destinationIndex);
-      } else {
-        console.error("Source column ID missing for dragged item.")
-        // Fallback: Search all columns in parent state - too complex for here.
-      }
+      onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, destinationIndex);
     }
     setDraggedItem(null);
     setDragOverColumn(null);
   };
   
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-     // Check if the mouse is leaving the column area for real, not just moving over child elements
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
         setDragOverColumn(null);
     }
   };
 
-
   return (
-    <Card 
-      className={`flex flex-col h-full shadow-md rounded-lg overflow-hidden transition-all duration-300 ${dragOverColumn === columnId ? 'bg-accent/10 ring-2 ring-accent' : 'bg-card'}`}
+    <div 
+      className={`flex flex-col h-full rounded-lg transition-all duration-300 p-1 ${dragOverColumn === columnId ? 'bg-accent/10 ring-1 ring-accent' : ''}`}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       onDragLeave={handleDragLeave}
     >
-      <CardHeader className="border-b bg-muted/50">
-        <CardTitle className="text-lg font-semibold text-foreground">{title} ({cards.length})</CardTitle>
-      </CardHeader>
-      <ScrollArea className="flex-grow">
-        <CardContent className="p-4 space-y-3 min-h-[200px]">
-          {cards.map((card, index) => (
+      <div className="flex justify-between items-center mb-3 px-1">
+        <h3 className="text-base font-semibold text-foreground">{title} ({cards.length})</h3>
+      </div>
+
+      {isAddingCard ? (
+        <div className="mb-3 px-1">
+          <ShadCard className="bg-card/80 shadow-md">
+            <CardContent className="p-2">
+              <Textarea
+                placeholder="Enter card details..."
+                value={newCardContent}
+                onChange={(e) => setNewCardContent(e.target.value)}
+                className="w-full min-h-[70px] text-sm bg-background/70 focus:ring-primary border-input"
+                autoFocus
+                onKeyDown={(e) => { 
+                  if (e.key === 'Enter' && !e.shiftKey) { 
+                    e.preventDefault(); 
+                    handleAddCardSubmit(); 
+                  }
+                  if (e.key === 'Escape') {
+                    setIsAddingCard(false); 
+                    setNewCardContent('');
+                  }
+                }}
+              />
+            </CardContent>
+            <CardFooter className="p-2 flex justify-end space-x-2">
+              <Button variant="ghost" size="sm" onClick={() => { setIsAddingCard(false); setNewCardContent(''); }}>Cancel</Button>
+              <Button size="sm" onClick={handleAddCardSubmit} disabled={!newCardContent.trim()}>Add</Button>
+            </CardFooter>
+          </ShadCard>
+        </div>
+      ) : (
+        <Button 
+          variant="outline" 
+          className="w-full mb-3 text-muted-foreground hover:text-foreground hover:border-primary/70 py-3" 
+          onClick={() => setIsAddingCard(true)}
+        >
+          <PlusCircle className="mr-2 h-4 w-4" /> Add Card
+        </Button>
+      )}
+
+      <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 250px)'}}> {/* Adjust max height as needed */}
+        <div className="space-y-3 px-1 pb-1 min-h-[100px]">
+          {cards.map((card) => (
             <RetroCard
               key={card.id}
               card={card}
@@ -132,36 +141,14 @@ export default function BoardColumnClient({
               onDelete={onDeleteCard}
               onUpvote={onUpvoteCard}
               currentUserId={currentUserId}
-              onDragStartItem={(cardData, srcColId) => handleDragStart({...cardData, sourceColumnId: srcColId} as any)}
+              onDragStartItem={handleDragStart}
             />
           ))}
           {cards.length === 0 && !isAddingCard && (
-             <p className="text-sm text-muted-foreground text-center pt-10">No cards yet. Add one!</p>
+             <p className="text-sm text-muted-foreground text-center pt-8">No cards yet.</p>
           )}
-        </CardContent>
+        </div>
       </ScrollArea>
-      <CardFooter className="p-4 border-t bg-muted/20">
-        {isAddingCard ? (
-          <div className="w-full space-y-2">
-            <Textarea
-              placeholder="Enter card details..."
-              value={newCardContent}
-              onChange={(e) => setNewCardContent(e.target.value)}
-              className="w-full min-h-[80px] text-sm bg-background focus:ring-primary"
-              autoFocus
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddCardSubmit(); }}}
-            />
-            <div className="flex justify-end space-x-2">
-              <Button variant="ghost" size="sm" onClick={() => { setIsAddingCard(false); setNewCardContent(''); }}>Cancel</Button>
-              <Button size="sm" onClick={handleAddCardSubmit} disabled={!newCardContent.trim()}>Add Card</Button>
-            </div>
-          </div>
-        ) : (
-          <Button variant="outline" className="w-full text-muted-foreground hover:text-foreground hover:border-primary" onClick={() => setIsAddingCard(true)}>
-            <PlusCircle className="mr-2 h-4 w-4" /> Add Card
-          </Button>
-        )}
-      </CardFooter>
-    </Card>
+    </div>
   );
 }
