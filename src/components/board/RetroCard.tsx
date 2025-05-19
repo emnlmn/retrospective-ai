@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import type { CardData, ColumnId } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -32,13 +32,21 @@ interface RetroCardProps {
   onDragStartItem: (card: CardData, sourceColumnId: ColumnId) => void;
 }
 
-export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote, currentUserId, onDragStartItem }: RetroCardProps) {
+const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote, currentUserId, onDragStartItem }: RetroCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(card.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const canEditOrDelete = card.userId === currentUserId;
   const hasUpvoted = card.upvotes.includes(currentUserId);
+
+  // Sync editedContent if card.content prop changes externally (e.g. undo/redo, collaborative edit)
+  useEffect(() => {
+    if (card.content !== editedContent && !isEditing) {
+        setEditedContent(card.content);
+    }
+  }, [card.content, editedContent, isEditing]);
+
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -55,11 +63,16 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
   };
   
   const handleCancelEdit = () => {
-    setEditedContent(card.content);
+    setEditedContent(card.content); // Reset to original content from prop
     setIsEditing(false);
   }
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+    // Prevent dragging when in edit mode
+    if (isEditing) {
+        e.preventDefault();
+        return;
+    }
     e.dataTransfer.setData('text/plain', card.id); 
     e.dataTransfer.effectAllowed = 'move';
     onDragStartItem(card, columnId);
@@ -68,14 +81,14 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
   return (
     <Card 
         data-card-id={card.id}
-        draggable={!isEditing}
+        draggable={!isEditing} // Draggable only if not editing
         onDragStart={handleDragStart}
         className={cn(
           "bg-card/90 shadow-sm hover:shadow-md transition-shadow duration-200 relative group border",
-          isEditing ? "cursor-default" : "cursor-grab active:cursor-grabbing",
+          isEditing ? "cursor-default ring-2 ring-primary" : "cursor-grab active:cursor-grabbing",
           columnId === 'wentWell' && 'border-l-4 border-l-accent',
           columnId === 'toImprove' && 'border-l-4 border-l-destructive',
-          columnId !== 'wentWell' && columnId !== 'toImprove' && 'border-border/70'
+          (columnId !== 'wentWell' && columnId !== 'toImprove') && 'border-border/70'
         )}
     >
       <CardContent className="p-3">
@@ -164,4 +177,6 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
       )}
     </Card>
   );
-}
+});
+
+export default RetroCard;

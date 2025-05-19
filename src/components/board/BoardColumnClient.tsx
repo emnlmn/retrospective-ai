@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import type { CardData, ColumnId } from '@/lib/types';
 import RetroCard from './RetroCard';
 import { Button } from '@/components/ui/button';
@@ -41,24 +41,26 @@ export default function BoardColumnClient({
   const [draggedItem, setDraggedItem] = useState<CardData & { sourceColumnId?: ColumnId } | null>(null);
   const [isDragOverListArea, setIsDragOverListArea] = useState(false);
 
-  const handleAddCardSubmit = () => {
+  const handleAddCardSubmit = useCallback(() => {
     if (newCardContent.trim()) {
       onAddCard(columnId, newCardContent.trim());
       setNewCardContent('');
       setIsAddingCard(false);
     }
-  };
+  }, [newCardContent, onAddCard, columnId]);
 
-  const handleDragStart = (card: CardData, srcColId: ColumnId) => {
+  const handleDragStart = useCallback((card: CardData, srcColId: ColumnId) => {
     setDraggedItem({ ...card, sourceColumnId: srcColId });
-  };
+  }, []); // setDraggedItem is stable
 
-  const handleListAreaDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleListAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault(); 
-    setIsDragOverListArea(true);
-  };
+    if (draggedItem) { // Only set drag over if there's an active dragged item
+        setIsDragOverListArea(true);
+    }
+  }, [draggedItem]);
 
-  const handleListAreaDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleListAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (draggedItem && draggedItem.sourceColumnId) {
       const dropTargetElement = e.target instanceof HTMLElement ? e.target.closest('[data-card-id]') : null;
@@ -66,31 +68,32 @@ export default function BoardColumnClient({
       
       let destinationIndex = cards.length; 
       if (dropTargetId) {
-        const targetCard = cards.find(c => c.id === dropTargetId);
         const targetCardIndex = cards.findIndex(c => c.id === dropTargetId);
 
-        if (targetCard && targetCardIndex !== -1 && dropTargetElement) {
+        if (targetCardIndex !== -1 && dropTargetElement) {
             const targetRect = dropTargetElement.getBoundingClientRect();
             const isDroppingInUpperHalf = e.clientY < targetRect.top + targetRect.height / 2;
             destinationIndex = isDroppingInUpperHalf ? targetCardIndex : targetCardIndex + 1;
         }
       }
+      
       // Ensure destinationIndex is not out of bounds if dropping at the end of a filtered list
-      if (destinationIndex > cards.length) {
-          destinationIndex = cards.length;
-      }
+      // or if the target was not a card (e.g. dropping on the empty space below cards)
+      destinationIndex = Math.max(0, Math.min(destinationIndex, cards.length));
+
 
       onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, destinationIndex);
     }
     setDraggedItem(null);
     setIsDragOverListArea(false);
-  };
+  }, [draggedItem, cards, columnId, onDragEnd]);
   
-  const handleListAreaDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleListAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // Check if the mouse is leaving the droppable area itself, not just moving over a child element
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
         setIsDragOverListArea(false);
     }
-  };
+  }, []);
 
   return (
     <div className="flex flex-col h-full rounded-lg p-1 bg-card/50">
@@ -145,6 +148,10 @@ export default function BoardColumnClient({
             onDragOver={handleListAreaDragOver}
             onDrop={handleListAreaDrop}
             onDragLeave={handleListAreaDragLeave}
+            // onDragEnd={() => { // Clean up draggedItem if drag ends outside a valid drop zone
+            //     setDraggedItem(null);
+            //     setIsDragOverListArea(false);
+            // }}
           >
             {cards.map((card) => (
               <RetroCard
@@ -167,3 +174,4 @@ export default function BoardColumnClient({
     </div>
   );
 }
+
