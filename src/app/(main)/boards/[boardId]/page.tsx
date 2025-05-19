@@ -42,8 +42,6 @@ export default function BoardPage() {
         cards: board.cards || {},
       };
       // We now trust that card.order is always set correctly by manipulation functions.
-      // Removed the previous logic that defaulted card.order here, as it might have
-      // interfered with drag-and-drop state updates.
       setCurrentBoard(sanitizedBoard);
     } else if (boards.length > 0 && !isLoading) { 
       // toast({ title: "Error", description: "Board not found.", variant: "destructive" });
@@ -119,7 +117,7 @@ export default function BoardPage() {
     if (!currentBoard) return;
     
     const { [cardId]: _, ...remainingCardsRest } = currentBoard.cards; 
-    const remainingCards = { ...remainingCardsRest }; // Ensure new object
+    const remainingCards = { ...remainingCardsRest }; 
     const newColumnCardIds = currentBoard.columns[columnId].cardIds.filter(id => id !== cardId);
 
     newColumnCardIds.forEach((id, index) => {
@@ -166,7 +164,7 @@ export default function BoardPage() {
   const handleDragEnd = (draggedCardId: string, sourceColumnId: ColumnId, destColumnId: ColumnId, destinationIndexInDropTarget: number) => {
     if (!currentBoard || !draggedCardId) return;
 
-    const boardCopy: BoardData = JSON.parse(JSON.stringify(currentBoard)); // Deep copy
+    const boardCopy: BoardData = JSON.parse(JSON.stringify(currentBoard)); 
     const cardToMove = boardCopy.cards[draggedCardId];
 
     if (!cardToMove) {
@@ -223,7 +221,6 @@ export default function BoardPage() {
     if (boardCopy.cards[draggedCardId]) {
       boardCopy.cards[draggedCardId].order = destCol.cardIds.indexOf(draggedCardId);
     }
-
 
     updateBoardData(boardCopy);
   };
@@ -349,5 +346,3 @@ export default function BoardPage() {
     </div>
   );
 }
-
-    
