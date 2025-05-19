@@ -95,14 +95,13 @@ const RetroCard = memo(function RetroCard({
 
   const relativeDate = useMemo(() => {
     try {
-      const date = new Date(card.createdAt);
-      if (isNaN(date.getTime())) {
-        return "Invalid date";
+      if (!card.createdAt || isNaN(new Date(card.createdAt).getTime())) {
+        return "Just now"; // Or some other sensible default for invalid/missing dates
       }
-      return formatDistanceToNow(date, { addSuffix: true });
+      return formatDistanceToNow(new Date(card.createdAt), { addSuffix: true });
     } catch (e) {
-      console.error("Error formatting date:", e);
-      return "Error in date";
+      console.error("Error formatting date:", card.createdAt, e);
+      return "Invalid date";
     }
   }, [card.createdAt]);
 
@@ -115,11 +114,12 @@ const RetroCard = memo(function RetroCard({
         className={cn(
           "bg-card/90 shadow-sm hover:shadow-md transition-all duration-200 relative group border",
           isEditing ? "cursor-default ring-2 ring-primary" : "cursor-grab active:cursor-grabbing",
-          isMergeTarget && !isEditing && "ring-2 ring-offset-2 ring-primary shadow-lg border-primary", // Removed scale, kept shadow-lg
-          columnId === 'wentWell' && !isMergeTarget && 'border-l-4 border-l-success',
-          columnId === 'toImprove' && !isMergeTarget && 'border-l-4 border-l-destructive',
-          (columnId !== 'wentWell' && columnId !== 'toImprove') && !isMergeTarget && 'border-border/70',
-          isBeingDragged && "opacity-50" // Apply opacity when being dragged
+          isMergeTarget && !isEditing && "ring-2 ring-offset-1 ring-primary shadow-lg border-primary",
+          !isMergeTarget && columnId === 'wentWell' && 'border-l-4 border-l-success',
+          !isMergeTarget && columnId === 'toImprove' && 'border-l-4 border-l-destructive',
+          !isMergeTarget && columnId === 'actionItems' && 'border-l-4 border-l-accent', 
+          !isMergeTarget && (columnId !== 'wentWell' && columnId !== 'toImprove' && columnId !== 'actionItems') && 'border-border/70',
+          isBeingDragged && "opacity-50" 
         )}
     >
       <CardContent className="p-3">

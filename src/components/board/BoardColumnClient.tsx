@@ -190,7 +190,7 @@ export default function BoardColumnClient({
   }, []);
 
   return (
-    <div className="flex flex-col h-full rounded-lg p-1 bg-card/50">
+    <div className="flex flex-col h-full rounded-lg p-1"> {/* Removed bg-card/50 */}
       <div className="flex justify-between items-center mb-2 px-1">
         <h3 className="text-base font-semibold text-foreground">{title} ({cards.length})</h3>
       </div>
@@ -236,7 +236,7 @@ export default function BoardColumnClient({
         <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
           <div
             className={cn(
-              "space-y-2 px-1 pt-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative" // Added pt-1 here
+              "space-y-2 px-1 pt-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative" 
             )}
             onDragOver={handleListAreaDragOver}
             onDrop={handleListAreaDrop}
@@ -275,4 +275,3 @@ export default function BoardColumnClient({
     </div>
   );
 }
-
