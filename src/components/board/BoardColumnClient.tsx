@@ -12,6 +12,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+// Type for the dragged item prop
+type DraggedItemType = CardData & { sourceColumnId: ColumnId };
 
 interface BoardColumnClientProps {
   columnId: ColumnId;
@@ -23,6 +25,8 @@ interface BoardColumnClientProps {
   onUpvoteCard: (cardId: string) => void;
   onDragEnd: (draggedCardId: string, sourceColumnId: ColumnId, destColumnId: ColumnId, destinationIndex: number) => void;
   currentUserId: string;
+  draggedItem: DraggedItemType | null; // Prop from parent
+  setDraggedItem: (item: DraggedItemType | null) => void; // Prop from parent
 }
 
 export default function BoardColumnClient({
@@ -35,10 +39,11 @@ export default function BoardColumnClient({
   onUpvoteCard,
   onDragEnd,
   currentUserId,
+  draggedItem, // Use from props
+  setDraggedItem, // Use from props
 }: BoardColumnClientProps) {
   const [newCardContent, setNewCardContent] = useState('');
   const [isAddingCard, setIsAddingCard] = useState(false);
-  const [draggedItem, setDraggedItem] = useState<CardData & { sourceColumnId?: ColumnId } | null>(null);
   const [isDragOverListArea, setIsDragOverListArea] = useState(false);
 
   const handleAddCardSubmit = useCallback(() => {
@@ -50,19 +55,19 @@ export default function BoardColumnClient({
   }, [newCardContent, onAddCard, columnId]);
 
   const handleDragStart = useCallback((card: CardData, srcColId: ColumnId) => {
-    setDraggedItem({ ...card, sourceColumnId: srcColId });
-  }, []); // setDraggedItem is stable
+    setDraggedItem({ ...card, sourceColumnId: srcColId }); // Call prop setDraggedItem
+  }, [setDraggedItem]);
 
   const handleListAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault(); 
-    if (draggedItem) { // Only set drag over if there's an active dragged item
+    if (draggedItem) { 
         setIsDragOverListArea(true);
     }
   }, [draggedItem]);
 
   const handleListAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (draggedItem && draggedItem.sourceColumnId) {
+    if (draggedItem && draggedItem.sourceColumnId) { // Use draggedItem from props
       const dropTargetElement = e.target instanceof HTMLElement ? e.target.closest('[data-card-id]') : null;
       const dropTargetId = dropTargetElement?.getAttribute('data-card-id');
       
@@ -77,19 +82,16 @@ export default function BoardColumnClient({
         }
       }
       
-      // Ensure destinationIndex is not out of bounds if dropping at the end of a filtered list
-      // or if the target was not a card (e.g. dropping on the empty space below cards)
       destinationIndex = Math.max(0, Math.min(destinationIndex, cards.length));
 
-
       onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, destinationIndex);
+      // Do not call setDraggedItem(null) here; parent (BoardPage) will do it after state update.
     }
-    setDraggedItem(null);
+    // setDraggedItem(null); // This line is removed, parent will handle it.
     setIsDragOverListArea(false);
   }, [draggedItem, cards, columnId, onDragEnd]);
   
   const handleListAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // Check if the mouse is leaving the droppable area itself, not just moving over a child element
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
         setIsDragOverListArea(false);
     }
@@ -148,10 +150,11 @@ export default function BoardColumnClient({
             onDragOver={handleListAreaDragOver}
             onDrop={handleListAreaDrop}
             onDragLeave={handleListAreaDragLeave}
-            // onDragEnd={() => { // Clean up draggedItem if drag ends outside a valid drop zone
-            //     setDraggedItem(null);
-            //     setIsDragOverListArea(false);
-            // }}
+            onDragEnd={() => { // Clean up draggedItem if drag ends outside a valid drop zone ONLY if this component set it.
+                 // This might need adjustment. Parent (BoardPage) now controls draggedItem.
+                 // It should be reset in BoardPage's handleDragEnd or if drag operation is cancelled globally.
+                 // For now, BoardPage's handleDragEnd calls setDraggedItem(null).
+            }}
           >
             {cards.map((card) => (
               <RetroCard
