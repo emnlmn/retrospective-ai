@@ -33,18 +33,19 @@ interface RetroCardProps {
   isMergeTarget?: boolean;
 }
 
-const RetroCard = memo(function RetroCard({ 
-    card, 
-    columnId, 
-    onUpdate, 
-    onDelete, 
-    onUpvote, 
-    currentUserId, 
+const RetroCard = memo(function RetroCard({
+    card,
+    columnId,
+    onUpdate,
+    onDelete,
+    onUpvote,
+    currentUserId,
     onDragStartItem,
-    isMergeTarget = false 
+    isMergeTarget = false
 }: RetroCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(card.content);
+  const [isBeingDragged, setIsBeingDragged] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const canEditOrDelete = card.userId === currentUserId;
@@ -70,21 +71,27 @@ const RetroCard = memo(function RetroCard({
     }
     setIsEditing(false);
   }, [editedContent, card.content, card.id, onUpdate]);
-  
+
   const handleCancelEdit = useCallback(() => {
-    setEditedContent(card.content); 
+    setEditedContent(card.content);
     setIsEditing(false);
   }, [card.content]);
 
-  const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragStartInternal = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (isEditing) {
         e.preventDefault();
         return;
     }
-    e.dataTransfer.setData('text/plain', card.id); 
+    e.dataTransfer.setData('text/plain', card.id);
     e.dataTransfer.effectAllowed = 'move';
+    setIsBeingDragged(true);
     onDragStartItem(card, columnId);
   }, [isEditing, card, columnId, onDragStartItem]);
+
+  const handleDragEndInternal = useCallback(() => {
+    setIsBeingDragged(false);
+  }, []);
+
 
   const relativeDate = useMemo(() => {
     try {
@@ -100,17 +107,19 @@ const RetroCard = memo(function RetroCard({
   }, [card.createdAt]);
 
   return (
-    <Card 
+    <Card
         data-card-id={card.id}
-        draggable={!isEditing} 
-        onDragStart={handleDragStart}
+        draggable={!isEditing}
+        onDragStart={handleDragStartInternal}
+        onDragEnd={handleDragEndInternal}
         className={cn(
           "bg-card/90 shadow-sm hover:shadow-md transition-all duration-200 relative group border",
           isEditing ? "cursor-default ring-2 ring-primary" : "cursor-grab active:cursor-grabbing",
-          isMergeTarget && !isEditing && "ring-2 ring-offset-2 ring-primary shadow-xl scale-[1.03] border-primary",
+          isMergeTarget && !isEditing && "ring-2 ring-offset-2 ring-primary shadow-lg border-primary", // Removed scale, kept shadow-lg
           columnId === 'wentWell' && !isMergeTarget && 'border-l-4 border-l-success',
           columnId === 'toImprove' && !isMergeTarget && 'border-l-4 border-l-destructive',
-          (columnId !== 'wentWell' && columnId !== 'toImprove') && !isMergeTarget && 'border-border/70'
+          (columnId !== 'wentWell' && columnId !== 'toImprove') && !isMergeTarget && 'border-border/70',
+          isBeingDragged && "opacity-50" // Apply opacity when being dragged
         )}
     >
       <CardContent className="p-3">
@@ -156,11 +165,11 @@ const RetroCard = memo(function RetroCard({
             </TooltipContent>
           </Tooltip>
           <div className="flex items-center space-x-1">
-            <Button 
-                variant="ghost" 
-                size="icon-sm" 
-                className={cn("h-7 w-7", hasUpvoted && "text-primary hover:text-primary")} 
-                onClick={() => onUpvote(card.id)} 
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn("h-7 w-7", hasUpvoted && "text-primary hover:text-primary")}
+                onClick={() => onUpvote(card.id)}
                 aria-label="Upvote card"
               >
                 <ThumbsUp className="h-3.5 w-3.5" />
