@@ -27,7 +27,7 @@ interface BoardColumnClientProps {
     sourceColumnId: ColumnId, 
     destColumnId: ColumnId, 
     destinationIndex: number,
-    mergeTargetCardId?: string // Added for merge
+    mergeTargetCardId?: string
   ) => void;
   currentUserId: string;
   draggedItem: DraggedItemType | null;
@@ -66,90 +66,139 @@ export default function BoardColumnClient({
 
   const handleListAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (draggedItem && draggedItem.sourceColumnId !== columnId) { // Only show placeholder if dragging from different column for now or different position
-        setIsDragOverListArea(true); // General highlight
-    } else if (draggedItem) {
-         setIsDragOverListArea(true);
+    if (!draggedItem) {
+        setPlaceholderIndex(null);
+        setIsDragOverListArea(false);
+        return;
     }
 
+    setIsDragOverListArea(true);
 
-    if (draggedItem) {
-      const listElement = e.currentTarget; // The div with onDragOver
-      let newIndex = cards.length;
+    const listElement = e.currentTarget;
+    const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
+    
+    let newCalculatedIndex: number | null = cards.length; // Default to end slot if no cards or below all cards
+    let overCardBody = false;
 
-      const cardElements = Array.from(listElement.querySelectorAll('[data-card-id]')) as HTMLElement[];
-      for (let i = 0; i < cardElements.length; i++) {
-        const cardEl = cardElements[i];
-        if (cardEl.getAttribute('data-card-id') === draggedItem.id) continue; // Don't compare with the dragged item itself
+    if (cardElements.length === 0) {
+        newCalculatedIndex = 0; // Slot at the beginning of an empty list
+    } else {
+        for (let i = 0; i < cardElements.length; i++) {
+            const cardEl = cardElements[i];
+            const cardId = cardEl.dataset.cardId;
 
-        const rect = cardEl.getBoundingClientRect();
-        const midY = rect.top + rect.height / 2;
-        if (e.clientY < midY) {
-          newIndex = i;
-          break;
+            // Don't create slots relative to the card being dragged if it's in the same column
+            // as this can be confusing. Allow merging with it though if conditions are met.
+            // However, for slot calculation, we need to consider its space.
+            // The key is to find a slot *between* elements or at edges.
+
+            const rect = cardEl.getBoundingClientRect();
+            const clientY = e.clientY;
+
+            const edgeRatio = 0.3; // 30% top/bottom for slot, middle 40% for potential merge (no placeholder)
+            const topEdgeZoneEnd = rect.top + rect.height * edgeRatio;
+            const bottomEdgeZoneStart = rect.bottom - rect.height * edgeRatio;
+
+            if (clientY < rect.top) { // Cursor is above the first card checked
+                 newCalculatedIndex = i;
+                 overCardBody = false;
+                 break;
+            }
+
+            if (clientY >= rect.top && clientY < topEdgeZoneEnd) {
+                // Over top edge of card i
+                newCalculatedIndex = i;
+                overCardBody = false;
+                break;
+            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) {
+                // Over bottom edge of card i
+                newCalculatedIndex = i + 1;
+                overCardBody = false;
+                break;
+            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) {
+                // Over middle body of card i
+                if (cardId !== draggedItem.id) { // Can't merge with itself
+                    overCardBody = true;
+                } else { 
+                    // if dragging over itself, treat as if it's trying to find a slot around itself
+                    overCardBody = false; 
+                    // determine if it's closer to top or bottom slot of itself for placeholder
+                    if (clientY < rect.top + rect.height / 2) {
+                        newCalculatedIndex = i;
+                    } else {
+                        newCalculatedIndex = i + 1;
+                    }
+                }
+                break; 
+            }
+            // If cursor is below this card, newCalculatedIndex remains cards.length or will be set by next card
+            if (i === cardElements.length - 1 && clientY >= rect.bottom) {
+                 newCalculatedIndex = cards.length; // Below last card
+                 overCardBody = false;
+            }
         }
-      }
-      // If dragging within the same column, adjust index if moving item downwards
-      if (draggedItem.sourceColumnId === columnId) {
-        const originalIndex = cards.findIndex(c => c.id === draggedItem.id);
-        if (originalIndex !== -1 && originalIndex < newIndex) {
-          // If the card is dragged downwards past its original position,
-          // the placeholder index effectively becomes one less because the card itself will be removed from its old spot.
-          // However, for display purposes, newIndex is correct based on visual elements.
-          // The actual drop logic in BoardPage will handle the final index correctly.
-        }
-      }
-      setPlaceholderIndex(newIndex);
+    }
+    
+    if (overCardBody) {
+        setPlaceholderIndex(null);
+        // Here you could set a different state to highlight the cardEl for merging, if desired
+    } else {
+        setPlaceholderIndex(newCalculatedIndex);
+        // Clear any merge highlight state
     }
   }, [draggedItem, cards, columnId]);
 
+
   const handleListAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (draggedItem && draggedItem.sourceColumnId) {
-      const listElement = e.currentTarget;
-      const dropTargetCardElement = e.target instanceof HTMLElement ? e.target.closest('[data-card-id]') : null;
-      const potentialMergeTargetId = dropTargetCardElement?.getAttribute('data-card-id');
+    if (!draggedItem) return;
 
-      if (potentialMergeTargetId && potentialMergeTargetId !== draggedItem.id) {
-        onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, -1, potentialMergeTargetId);
-      } else {
-        let destinationIndex = cards.length; // Default to end of list
-        const cardElements = Array.from(listElement.querySelectorAll('[data-card-id]:not([data-placeholder])')) as HTMLElement[];
+    const listElement = e.currentTarget;
 
-        for (let i = 0; i < cardElements.length; i++) {
-            const cardEl = cardElements[i];
-             // Skip the dragged item itself if it's still in the DOM list during calculation
-            if (cardEl.getAttribute('data-card-id') === draggedItem.id) continue;
+    if (placeholderIndex !== null) {
+        // A slot was indicated by dragOver, prioritize positioning.
+        onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, placeholderIndex, undefined);
+    } else {
+        // No slot indicated by dragOver (placeholderIndex is null).
+        // This means dragOver determined the hover was over a card's body (potential merge)
+        // or in a truly empty part of the column not near card edges.
+        const dropTargetElement = e.target as HTMLElement;
+        const directCardTarget = dropTargetElement.closest<HTMLElement>('[data-card-id]');
+        const potentialMergeTargetId = directCardTarget?.dataset.cardId;
 
-            const rect = cardEl.getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            if (e.clientY < midY) {
-                destinationIndex = i;
-                // If the dragged item was originally before this position in the same column,
-                // and we're moving it downwards, the effective index is one less.
-                // However, the placeholderIndex calculation should align with this.
-                // The handleDragEnd in BoardPage will manage the final array math.
-                break;
+        if (potentialMergeTargetId && potentialMergeTargetId !== draggedItem.id) {
+            // It's a merge, as dragOver put us in a "no-slot" state and we're on another card
+            onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, -1, potentialMergeTargetId);
+        } else {
+            // Dropped in empty space, not on a card, and no slot was indicated by dragOver.
+            // This usually means the column is empty or dragging far from other cards.
+            // Default to appending at the end of the list.
+            // Or recalculate based on Y, though dragOver should have set a placeholder if near items.
+            let finalFallbackIndex = cards.length;
+             if (cardElements.length > 0) {
+                const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
+                for (let i = 0; i < cardElements.length; i++) {
+                    const cardEl = cardElements[i];
+                    const rect = cardEl.getBoundingClientRect();
+                    if (e.clientY < rect.top + rect.height / 2) {
+                        finalFallbackIndex = i;
+                        break;
+                    }
+                }
+            } else {
+                finalFallbackIndex = 0;
             }
+            onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, finalFallbackIndex, undefined);
         }
-         // If dragging within the same column and item moved downwards, adjust index for splice
-        if (draggedItem.sourceColumnId === columnId) {
-            const originalOrder = cards.find(c => c.id === draggedItem.id)?.order;
-            const targetOrderEquivalent = destinationIndex; // placeholderIndex is the visual slot
-            if (originalOrder !== undefined && originalOrder < targetOrderEquivalent) {
-                // destinationIndex--; // Decrement because the item itself will be removed before splice
-            }
-        }
-
-        onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, destinationIndex, undefined);
-      }
     }
+
     setPlaceholderIndex(null);
     setIsDragOverListArea(false);
     // draggedItem is reset by parent (BoardPage)
-  }, [draggedItem, cards, columnId, onDragEnd, setPlaceholderIndex, setIsDragOverListArea]);
+  }, [draggedItem, cards, columnId, onDragEnd, placeholderIndex]);
   
   const handleListAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // Only reset if leaving the actual list area, not just moving between child elements
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
         setIsDragOverListArea(false);
         setPlaceholderIndex(null);
@@ -203,7 +252,7 @@ export default function BoardColumnClient({
         <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
           <div 
             className={cn(
-              "space-y-2 px-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative", // Added relative for placeholder
+              "space-y-2 px-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative",
               isDragOverListArea ? 'bg-accent/20 ring-2 ring-accent' : 'bg-transparent'
             )}
             onDragOver={handleListAreaDragOver}
@@ -226,13 +275,16 @@ export default function BoardColumnClient({
                 />
               </React.Fragment>
             ))}
-            {placeholderIndex === cards.length && (
+            {/* Render placeholder at the end of the list if placeholderIndex points there */}
+            {(placeholderIndex !== null && placeholderIndex === cards.length) && (
               <div className="h-[2px] my-1.5 bg-primary rounded-full w-full" data-placeholder />
             )}
+            {/* Message for empty column when not adding and no placeholder is active */}
             {cards.length === 0 && !isAddingCard && placeholderIndex === null && (
               <p className="text-sm text-muted-foreground text-center pt-8">No cards yet.</p>
             )}
-             {cards.length === 0 && placeholderIndex === 0 && (
+            {/* Placeholder for empty list when dragging over it */}
+            {cards.length === 0 && placeholderIndex === 0 && (
                 <div className="h-[2px] my-1.5 bg-primary rounded-full w-full" data-placeholder />
             )}
           </div>
@@ -241,3 +293,4 @@ export default function BoardColumnClient({
     </div>
   );
 }
+
