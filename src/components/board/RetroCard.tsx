@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 import type { CardData, ColumnId } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,7 +40,7 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
   const canEditOrDelete = card.userId === currentUserId;
   const hasUpvoted = card.upvotes.includes(currentUserId);
 
-  // Sync editedContent if card.content prop changes externally (e.g. undo/redo, collaborative edit)
+  // Sync editedContent if card.content prop changes externally
   useEffect(() => {
     if (card.content !== editedContent && !isEditing) {
         setEditedContent(card.content);
@@ -63,12 +63,11 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
   };
   
   const handleCancelEdit = () => {
-    setEditedContent(card.content); // Reset to original content from prop
+    setEditedContent(card.content); 
     setIsEditing(false);
   }
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-    // Prevent dragging when in edit mode
     if (isEditing) {
         e.preventDefault();
         return;
@@ -78,10 +77,24 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
     onDragStartItem(card, columnId);
   };
 
+  const relativeDate = useMemo(() => {
+    try {
+      const date = new Date(card.createdAt);
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return "Invalid date";
+      }
+      return formatDistanceToNow(date, { addSuffix: true });
+    } catch (e) {
+      console.error("Error formatting date:", e);
+      return "Error in date";
+    }
+  }, [card.createdAt]);
+
   return (
     <Card 
         data-card-id={card.id}
-        draggable={!isEditing} // Draggable only if not editing
+        draggable={!isEditing} 
         onDragStart={handleDragStart}
         className={cn(
           "bg-card/90 shadow-sm hover:shadow-md transition-shadow duration-200 relative group border",
@@ -130,7 +143,7 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
             </TooltipTrigger>
             <TooltipContent>
               <p>{card.userName}</p>
-              <p>{formatDistanceToNow(new Date(card.createdAt), { addSuffix: true })}</p>
+              <p>{relativeDate}</p>
             </TooltipContent>
           </Tooltip>
           <div className="flex items-center space-x-1">
