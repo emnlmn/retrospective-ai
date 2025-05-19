@@ -32,27 +32,27 @@ export default function BoardPage() {
   useEffect(() => {
     const board = boards.find(b => b.id === boardId);
     if (board) {
+      // Ensure columns always exist, even if initially empty from localStorage
       const sanitizedBoard = {
         ...board,
         columns: {
-          wentWell: board.columns?.wentWell || INITIAL_COLUMNS_DATA.wentWell,
-          toImprove: board.columns?.toImprove || INITIAL_COLUMNS_DATA.toImprove,
-          actionItems: board.columns?.actionItems || INITIAL_COLUMNS_DATA.actionItems,
+          wentWell: board.columns?.wentWell || { ...INITIAL_COLUMNS_DATA.wentWell, cardIds: board.columns?.wentWell?.cardIds || [] },
+          toImprove: board.columns?.toImprove || { ...INITIAL_COLUMNS_DATA.toImprove, cardIds: board.columns?.toImprove?.cardIds || [] },
+          actionItems: board.columns?.actionItems || { ...INITIAL_COLUMNS_DATA.actionItems, cardIds: board.columns?.actionItems?.cardIds || [] },
         },
         cards: board.cards || {},
       };
-      // We now trust that card.order is always set correctly by manipulation functions.
       setCurrentBoard(sanitizedBoard);
-    } else if (boards.length > 0 && !isLoading) { 
-      // toast({ title: "Error", description: "Board not found.", variant: "destructive" });
-      // router.push('/'); 
+    } else if (boards.length > 0 && !isLoading && !currentBoard) { // Check !currentBoard to avoid pushing if already on another page
+       // router.push('/'); // Temporarily disable auto-redirect on not found
     }
     setIsLoading(false);
-  }, [boardId, boards, isLoading, router, toast]);
+  }, [boardId, boards, isLoading, router, currentBoard]);
+
 
   const updateBoardData = useCallback((updatedBoard: BoardData) => {
     setCurrentBoard(updatedBoard);
-    setBoards(prevBoards => 
+    setBoards(prevBoards =>
       prevBoards.map(b => b.id === updatedBoard.id ? updatedBoard : b)
     );
   }, [setBoards]);
@@ -74,15 +74,14 @@ export default function BoardPage() {
       ...currentBoard.cards,
       [newCardId]: newCard,
     };
-    const newColumnCardIds = [newCardId, ...currentBoard.columns[columnId].cardIds];
+    const newColumnCardIds = [newCardId, ...(currentBoard.columns[columnId]?.cardIds || [])];
 
-    // Update order for all cards in the affected column
     newColumnCardIds.forEach((cardId, index) => {
       if (newCardsRecord[cardId]) {
         newCardsRecord[cardId] = { ...newCardsRecord[cardId], order: index };
       }
     });
-    
+
     const updatedBoard: BoardData = {
       ...currentBoard,
       cards: newCardsRecord,
@@ -115,10 +114,10 @@ export default function BoardPage() {
 
   const handleDeleteCard = (cardId: string, columnId: ColumnId) => {
     if (!currentBoard) return;
-    
-    const { [cardId]: _, ...remainingCardsRest } = currentBoard.cards; 
-    const remainingCards = { ...remainingCardsRest }; 
-    const newColumnCardIds = currentBoard.columns[columnId].cardIds.filter(id => id !== cardId);
+
+    const { [cardId]: _, ...remainingCardsRest } = currentBoard.cards;
+    const remainingCards = { ...remainingCardsRest };
+    const newColumnCardIds = (currentBoard.columns[columnId]?.cardIds || []).filter(id => id !== cardId);
 
     newColumnCardIds.forEach((id, index) => {
       if (remainingCards[id]) {
@@ -146,10 +145,10 @@ export default function BoardPage() {
     if (!card) return;
 
     const alreadyUpvoted = card.upvotes.includes(user.id);
-    const newUpvotes = alreadyUpvoted 
+    const newUpvotes = alreadyUpvoted
       ? card.upvotes.filter(uid => uid !== user.id)
       : [...card.upvotes, user.id];
-    
+
     const updatedCard = { ...card, upvotes: newUpvotes };
     const updatedBoard = {
       ...currentBoard,
@@ -164,65 +163,90 @@ export default function BoardPage() {
   const handleDragEnd = (draggedCardId: string, sourceColumnId: ColumnId, destColumnId: ColumnId, destinationIndexInDropTarget: number) => {
     if (!currentBoard || !draggedCardId) return;
 
-    const boardCopy: BoardData = JSON.parse(JSON.stringify(currentBoard)); 
-    const cardToMove = boardCopy.cards[draggedCardId];
+    const boardStateBeforeUpdate: BoardData = currentBoard;
 
+    const cardToMove = boardStateBeforeUpdate.cards[draggedCardId];
     if (!cardToMove) {
-        console.error("Dragged card not found in board copy.");
-        return;
+      console.error("Dragged card not found in current board state.");
+      return;
     }
 
-    const sourceCol = boardCopy.columns[sourceColumnId];
-    const destCol = boardCopy.columns[destColumnId];
+    // Prepare new cardId arrays for source and destination columns
+    let newSourceColCardIds = [...(boardStateBeforeUpdate.columns[sourceColumnId]?.cardIds || [])];
+    let newDestColCardIds: string[];
 
-    // Remove card from source column's cardIds array
-    const sourceCardIndex = sourceCol.cardIds.indexOf(draggedCardId);
-    if (sourceCardIndex > -1) {
-        sourceCol.cardIds.splice(sourceCardIndex, 1);
-    } else {
-        console.warn(`Card ${draggedCardId} not found in source column ${sourceColumnId} cardIds during removal.`);
-    }
-
-    // Determine the actual destination index for splice
-    let effectiveDestinationIndex = destinationIndexInDropTarget;
+    const sourceCardIndex = newSourceColCardIds.indexOf(draggedCardId);
 
     if (sourceColumnId === destColumnId) {
-        // If dragging within the same column:
-        // The destinationIndexInDropTarget is relative to the list *before* the card was removed.
-        // If the card was removed from an index *before* its target destinationIndex,
-        // then the target index in the "list-with-item-removed" is one less.
-        if (sourceCardIndex > -1 && sourceCardIndex < destinationIndexInDropTarget) {
-            effectiveDestinationIndex = destinationIndexInDropTarget - 1;
-        }
-    }
-    
-    // Ensure the index is within the bounds of the destination column's cardIds array
-    effectiveDestinationIndex = Math.max(0, Math.min(effectiveDestinationIndex, destCol.cardIds.length));
-    
-    // Add card to destination column's cardIds array at the effective index
-    destCol.cardIds.splice(effectiveDestinationIndex, 0, draggedCardId);
+      // Dragging within the same column
+      if (sourceCardIndex > -1) {
+        newSourceColCardIds.splice(sourceCardIndex, 1); // Remove from its original position
+      } else {
+        console.warn(`Card ${draggedCardId} not found in source column ${sourceColumnId} during intra-column move.`);
+        return; 
+      }
+      
+      let effectiveDestinationIndex = destinationIndexInDropTarget;
+      // Adjust index if card was removed from before its target destination
+      if (sourceCardIndex > -1 && sourceCardIndex < destinationIndexInDropTarget) {
+        effectiveDestinationIndex = Math.max(0, destinationIndexInDropTarget - 1);
+      }
+      effectiveDestinationIndex = Math.max(0, Math.min(effectiveDestinationIndex, newSourceColCardIds.length));
+      newSourceColCardIds.splice(effectiveDestinationIndex, 0, draggedCardId); // Add to new position
+      newDestColCardIds = newSourceColCardIds; // Both point to the same updated array reference
+    } else {
+      // Dragging to a different column
+      newDestColCardIds = [...(boardStateBeforeUpdate.columns[destColumnId]?.cardIds || [])];
+      if (sourceCardIndex > -1) {
+        newSourceColCardIds.splice(sourceCardIndex, 1); // Remove from source
+      } else {
+        console.warn(`Card ${draggedCardId} not found in source column ${sourceColumnId} during inter-column move.`);
+        // If card not found in source, something is wrong. For safety, might return.
+        // For now, we'll let it proceed, it might mean the card is "newly" appearing in dest.
+      }
 
-    // Update 'order' property for all cards in the destination column
-    destCol.cardIds.forEach((cardId, index) => {
-        if (boardCopy.cards[cardId]) {
-            boardCopy.cards[cardId].order = index;
-        }
+      let effectiveDestinationIndex = Math.max(0, Math.min(destinationIndexInDropTarget, newDestColCardIds.length));
+      newDestColCardIds.splice(effectiveDestinationIndex, 0, draggedCardId); // Add to destination
+    }
+
+    // Create a new cards record and update order properties for all affected cards
+    const newCardsRecord: Record<string, CardData> = { ...boardStateBeforeUpdate.cards };
+
+    // Update order for all cards in the destination column
+    newDestColCardIds.forEach((cardId, index) => {
+      if (newCardsRecord[cardId]) {
+        newCardsRecord[cardId] = { ...newCardsRecord[cardId], order: index };
+      }
     });
 
-    // If source and destination columns are different, also update 'order' for cards in the source column
+    // If dragging to a different column, also update order for all cards in the source column
     if (sourceColumnId !== destColumnId) {
-        sourceCol.cardIds.forEach((cardId, index) => {
-            if (boardCopy.cards[cardId]) {
-                boardCopy.cards[cardId].order = index;
-            }
-        });
+      newSourceColCardIds.forEach((cardId, index) => {
+        if (newCardsRecord[cardId]) {
+          newCardsRecord[cardId] = { ...newCardsRecord[cardId], order: index };
+        }
+      });
     }
-    // Update the card that was moved with its new order in its new column
-    if (boardCopy.cards[draggedCardId]) {
-      boardCopy.cards[draggedCardId].order = destCol.cardIds.indexOf(draggedCardId);
-    }
+    // Note: If sourceColumnId === destColumnId, newDestColCardIds (which is newSourceColCardIds)
+    // has already been processed, so all orders in that single column are correct.
 
-    updateBoardData(boardCopy);
+    // Construct the completely new board data object
+    const updatedBoard: BoardData = {
+      ...boardStateBeforeUpdate, // Copies id, title, createdAt
+      cards: newCardsRecord,     // Assign the new map of cards
+      columns: {                 // Create a new columns object
+        ...boardStateBeforeUpdate.columns, // Spread existing columns
+        [sourceColumnId]: {      // Create/overwrite source column with new data
+          ...(boardStateBeforeUpdate.columns[sourceColumnId] || INITIAL_COLUMNS_DATA[sourceColumnId]),
+          cardIds: newSourceColCardIds,
+        },
+        [destColumnId]: {        // Create/overwrite dest column with new data
+          ...(boardStateBeforeUpdate.columns[destColumnId] || INITIAL_COLUMNS_DATA[destColumnId]),
+          cardIds: newDestColCardIds,
+        },
+      },
+    };
+    updateBoardData(updatedBoard);
   };
 
 
@@ -230,11 +254,11 @@ export default function BoardPage() {
     if (!currentBoard || !user) return;
     setIsAISuggesting(true);
     try {
-      const toImproveCardsContent = currentBoard.columns.toImprove.cardIds
+      const toImproveCardsContent = (currentBoard.columns.toImprove?.cardIds || [])
         .map(cardId => currentBoard.cards[cardId]?.content)
         .filter(content => !!content)
         .join('\n- ');
-      
+
       if (!toImproveCardsContent.trim()) {
         toast({ title: "AI Suggestions", description: "Add some items to the 'To Improve' column first.", variant: "default" });
         setIsAISuggesting(false);
@@ -245,21 +269,31 @@ export default function BoardPage() {
       const result = await suggestActionItems(input);
 
       if (result.actionItems && result.actionItems.length > 0) {
+        // Start with currentBoard to ensure all properties are preserved
         let tempBoardCopy = JSON.parse(JSON.stringify(currentBoard)) as BoardData;
+        
+        // Ensure actionItems column exists
+        if (!tempBoardCopy.columns.actionItems) {
+            tempBoardCopy.columns.actionItems = { ...INITIAL_COLUMNS_DATA.actionItems, cardIds: [] };
+        }
+        if (!tempBoardCopy.columns.actionItems.cardIds) {
+            tempBoardCopy.columns.actionItems.cardIds = [];
+        }
+
 
         result.actionItems.forEach(itemContent => {
           const newCardId = uuidv4();
           const newCard: CardData = {
             id: newCardId,
             content: itemContent,
-            userId: user.id, 
+            userId: user.id,
             userName: `${user.name} (AI Suggested)`,
             createdAt: new Date().toISOString(),
             upvotes: [],
             order: 0, // Will be set by reordering below
           };
           tempBoardCopy.cards[newCardId] = newCard;
-          tempBoardCopy.columns.actionItems.cardIds.unshift(newCardId); 
+          tempBoardCopy.columns.actionItems.cardIds.unshift(newCardId);
         });
 
         // Re-order cards in actionItems column
@@ -268,7 +302,7 @@ export default function BoardPage() {
             tempBoardCopy.cards[cardId].order = index;
           }
         });
-        
+
         updateBoardData(tempBoardCopy);
         toast({ title: "AI Suggestions Added", description: `${result.actionItems.length} action items added.` });
       } else {
@@ -323,26 +357,33 @@ export default function BoardPage() {
 
       <ScrollArea className="flex-grow -mx-1">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-1 min-w-[1200px] md:min-w-full px-1">
-          {columnIds.map(columnId => (
-            <BoardColumnClient
-              key={columnId}
-              columnId={columnId}
-              title={DEFAULT_COLUMNS_CONFIG[columnId].title}
-              cards={(currentBoard.columns[columnId]?.cardIds || [])
-                .map(id => currentBoard.cards[id])
-                .filter((card): card is CardData => !!card) 
-                .sort((a,b) => (a.order || 0) - (b.order || 0))}
-              onAddCard={handleAddCard}
-              onUpdateCard={handleUpdateCard}
-              onDeleteCard={handleDeleteCard}
-              onUpvoteCard={handleUpvoteCard}
-              onDragEnd={handleDragEnd}
-              currentUserId={user?.id || ''}
-            />
-          ))}
+          {columnIds.map(columnId => {
+            const columnData = currentBoard.columns[columnId] || INITIAL_COLUMNS_DATA[columnId];
+            const cardsForColumn = (columnData.cardIds || [])
+              .map(id => currentBoard.cards[id])
+              .filter((card): card is CardData => !!card)
+              .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            return (
+              <BoardColumnClient
+                key={columnId}
+                columnId={columnId}
+                title={DEFAULT_COLUMNS_CONFIG[columnId].title}
+                cards={cardsForColumn}
+                onAddCard={handleAddCard}
+                onUpdateCard={handleUpdateCard}
+                onDeleteCard={handleDeleteCard}
+                onUpvoteCard={handleUpvoteCard}
+                onDragEnd={handleDragEnd}
+                currentUserId={user?.id || ''}
+              />
+            );
+          })}
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
     </div>
   );
 }
+
+    
