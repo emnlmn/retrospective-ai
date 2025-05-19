@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from 'react';
 import type { CardData, ColumnId } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -30,9 +30,19 @@ interface RetroCardProps {
   onUpvote: (cardId: string) => void;
   currentUserId: string;
   onDragStartItem: (card: CardData, sourceColumnId: ColumnId) => void;
+  isMergeTarget?: boolean;
 }
 
-const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote, currentUserId, onDragStartItem }: RetroCardProps) {
+const RetroCard = memo(function RetroCard({ 
+    card, 
+    columnId, 
+    onUpdate, 
+    onDelete, 
+    onUpvote, 
+    currentUserId, 
+    onDragStartItem,
+    isMergeTarget = false 
+}: RetroCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(card.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -54,19 +64,19 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
     }
   }, [isEditing]);
 
-  const handleUpdate = () => {
+  const handleUpdate = useCallback(() => {
     if (editedContent.trim() && editedContent.trim() !== card.content) {
       onUpdate(card.id, editedContent.trim());
     }
     setIsEditing(false);
-  };
+  }, [editedContent, card.content, card.id, onUpdate]);
   
-  const handleCancelEdit = () => {
+  const handleCancelEdit = useCallback(() => {
     setEditedContent(card.content); 
     setIsEditing(false);
-  }
+  }, [card.content]);
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (isEditing) {
         e.preventDefault();
         return;
@@ -74,7 +84,7 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
     e.dataTransfer.setData('text/plain', card.id); 
     e.dataTransfer.effectAllowed = 'move';
     onDragStartItem(card, columnId);
-  };
+  }, [isEditing, card, columnId, onDragStartItem]);
 
   const relativeDate = useMemo(() => {
     try {
@@ -95,11 +105,12 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
         draggable={!isEditing} 
         onDragStart={handleDragStart}
         className={cn(
-          "bg-card/90 shadow-sm hover:shadow-md transition-shadow duration-200 relative group border",
+          "bg-card/90 shadow-sm hover:shadow-md transition-all duration-200 relative group border",
           isEditing ? "cursor-default ring-2 ring-primary" : "cursor-grab active:cursor-grabbing",
-          columnId === 'wentWell' && 'border-l-4 border-l-success', // Changed to success
-          columnId === 'toImprove' && 'border-l-4 border-l-destructive',
-          (columnId !== 'wentWell' && columnId !== 'toImprove') && 'border-border/70'
+          isMergeTarget && !isEditing && "ring-2 ring-offset-2 ring-primary shadow-xl scale-[1.03] border-primary",
+          columnId === 'wentWell' && !isMergeTarget && 'border-l-4 border-l-success',
+          columnId === 'toImprove' && !isMergeTarget && 'border-l-4 border-l-destructive',
+          (columnId !== 'wentWell' && columnId !== 'toImprove') && !isMergeTarget && 'border-border/70'
         )}
     >
       <CardContent className="p-3">
