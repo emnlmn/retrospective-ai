@@ -41,20 +41,9 @@ export default function BoardPage() {
         },
         cards: board.cards || {},
       };
-      // Ensure all cards have an order property, defaulting if necessary
-      Object.values(sanitizedBoard.cards).forEach(card => {
-        if (card.order === undefined) {
-          let foundOrder: number | undefined = undefined;
-          for (const col of Object.values(sanitizedBoard.columns)) {
-            const index = col.cardIds.indexOf(card.id);
-            if (index !== -1) {
-              foundOrder = index;
-              break;
-            }
-          }
-          card.order = foundOrder !== undefined ? foundOrder : 0;
-        }
-      });
+      // We now trust that card.order is always set correctly by manipulation functions.
+      // Removed the previous logic that defaulted card.order here, as it might have
+      // interfered with drag-and-drop state updates.
       setCurrentBoard(sanitizedBoard);
     } else if (boards.length > 0 && !isLoading) { 
       // toast({ title: "Error", description: "Board not found.", variant: "destructive" });
@@ -80,16 +69,16 @@ export default function BoardPage() {
       userName: user.name,
       createdAt: new Date().toISOString(),
       upvotes: [],
-      order: 0, 
+      order: 0, // Will be at the top, order re-calculated below
     };
 
-    // Create new records ensuring immutability
     const newCardsRecord = {
       ...currentBoard.cards,
       [newCardId]: newCard,
     };
     const newColumnCardIds = [newCardId, ...currentBoard.columns[columnId].cardIds];
 
+    // Update order for all cards in the affected column
     newColumnCardIds.forEach((cardId, index) => {
       if (newCardsRecord[cardId]) {
         newCardsRecord[cardId] = { ...newCardsRecord[cardId], order: index };
@@ -130,8 +119,7 @@ export default function BoardPage() {
     if (!currentBoard) return;
     
     const { [cardId]: _, ...remainingCardsRest } = currentBoard.cards; 
-    // Ensure remainingCards is a new object for immutability if cards are reordered
-    const remainingCards = { ...remainingCardsRest };
+    const remainingCards = { ...remainingCardsRest }; // Ensure new object
     const newColumnCardIds = currentBoard.columns[columnId].cardIds.filter(id => id !== cardId);
 
     newColumnCardIds.forEach((id, index) => {
@@ -178,8 +166,7 @@ export default function BoardPage() {
   const handleDragEnd = (draggedCardId: string, sourceColumnId: ColumnId, destColumnId: ColumnId, destinationIndexInDropTarget: number) => {
     if (!currentBoard || !draggedCardId) return;
 
-    // Use a deep copy to ensure all mutations are on a new state object
-    const boardCopy: BoardData = JSON.parse(JSON.stringify(currentBoard));
+    const boardCopy: BoardData = JSON.parse(JSON.stringify(currentBoard)); // Deep copy
     const cardToMove = boardCopy.cards[draggedCardId];
 
     if (!cardToMove) {
@@ -195,8 +182,6 @@ export default function BoardPage() {
     if (sourceCardIndex > -1) {
         sourceCol.cardIds.splice(sourceCardIndex, 1);
     } else {
-        // This might happen if the card was already moved or data is inconsistent.
-        // For robustness, we log but attempt to proceed with insertion.
         console.warn(`Card ${draggedCardId} not found in source column ${sourceColumnId} cardIds during removal.`);
     }
 
@@ -213,7 +198,7 @@ export default function BoardPage() {
         }
     }
     
-    // Ensure the index is within the bounds of the destination column's cardIds array (after potential removal if same column)
+    // Ensure the index is within the bounds of the destination column's cardIds array
     effectiveDestinationIndex = Math.max(0, Math.min(effectiveDestinationIndex, destCol.cardIds.length));
     
     // Add card to destination column's cardIds array at the effective index
@@ -234,7 +219,11 @@ export default function BoardPage() {
             }
         });
     }
-    // If source and destination are the same, the loop for destCol already handled reordering for that column.
+    // Update the card that was moved with its new order in its new column
+    if (boardCopy.cards[draggedCardId]) {
+      boardCopy.cards[draggedCardId].order = destCol.cardIds.indexOf(draggedCardId);
+    }
+
 
     updateBoardData(boardCopy);
   };
@@ -270,12 +259,13 @@ export default function BoardPage() {
             userName: `${user.name} (AI Suggested)`,
             createdAt: new Date().toISOString(),
             upvotes: [],
-            order: 0, // Will be set by reordering
+            order: 0, // Will be set by reordering below
           };
           tempBoardCopy.cards[newCardId] = newCard;
           tempBoardCopy.columns.actionItems.cardIds.unshift(newCardId); 
         });
 
+        // Re-order cards in actionItems column
         tempBoardCopy.columns.actionItems.cardIds.forEach((cardId, index) => {
           if (tempBoardCopy.cards[cardId]) {
             tempBoardCopy.cards[cardId].order = index;
@@ -359,3 +349,5 @@ export default function BoardPage() {
     </div>
   );
 }
+
+    

@@ -91,7 +91,7 @@ export default function BoardColumnClient({
   };
 
   return (
-    <div className="flex flex-col h-full rounded-lg p-1 bg-card/50"> {/* Adjusted background slightly for column visibility */}
+    <div className="flex flex-col h-full rounded-lg p-1 bg-card/50">
       <div className="flex justify-between items-center mb-2 px-1">
         <h3 className="text-base font-semibold text-foreground">{title} ({cards.length})</h3>
       </div>
@@ -134,11 +134,11 @@ export default function BoardColumnClient({
         </Button>
       )}
 
-      <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}> {/* Adjusted max height slightly */}
+      <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
         <div 
           className={cn(
             "space-y-2 px-1 pb-1 min-h-[100px] rounded-md transition-all duration-150",
-            isDragOverListArea ? 'bg-accent/20 ring-2 ring-accent' : 'bg-transparent' // Apply highlight here
+            isDragOverListArea ? 'bg-accent/20 ring-2 ring-accent' : 'bg-transparent'
           )}
           onDragOver={handleListAreaDragOver}
           onDrop={handleListAreaDrop}
@@ -148,7 +148,7 @@ export default function BoardColumnClient({
             <RetroCard
               key={card.id}
               card={card}
-              columnId={columnId}
+              columnId={columnId} // Pass columnId here
               onUpdate={onUpdateCard}
               onDelete={onDeleteCard}
               onUpvote={onUpvoteCard}
@@ -165,3 +165,4 @@ export default function BoardColumnClient({
   );
 }
 
+    

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -5,7 +6,7 @@ import type { CardData, ColumnId } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import { ThumbsUp, Edit3, Trash2, Check, X, MoreVertical } from 'lucide-react'; // Removed GripVertical
+import { ThumbsUp, Edit3, Trash2, Check, X, MoreVertical } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import {
@@ -68,22 +69,24 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
   return (
     <Card 
         data-card-id={card.id}
-        draggable={!isEditing} // Prevent dragging while editing
+        draggable={!isEditing}
         onDragStart={handleDragStart}
         className={cn(
-          "bg-card/90 shadow-sm hover:shadow-md transition-shadow duration-200 relative group border border-border/70",
-          isEditing ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+          "bg-card/90 shadow-sm hover:shadow-md transition-shadow duration-200 relative group border", // Removed border-border/70 to allow specific border colors
+          isEditing ? "cursor-default" : "cursor-grab active:cursor-grabbing",
+          columnId === 'wentWell' && 'border-l-4 border-l-accent',
+          columnId === 'toImprove' && 'border-l-4 border-l-destructive',
+          columnId !== 'wentWell' && columnId !== 'toImprove' && 'border-border/70' // Default border for other columns
         )}
     >
-      {/* Removed GripVertical icon and its container div */}
-      <CardContent className="p-3"> {/* Adjusted padding: was pl-7 */}
+      <CardContent className="p-3">
         {isEditing && canEditOrDelete ? (
           <div className="space-y-2">
             <Textarea
               ref={textareaRef}
               value={editedContent}
               onChange={(e) => setEditedContent(e.target.value)}
-              className="w-full min-h-[60px] text-sm bg-background/80 focus:ring-primary"
+              className="w-full min-h-[60px] text-sm bg-background/80 focus:ring-primary border-input"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -108,7 +111,7 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
         )}
       </CardContent>
       {!isEditing && (
-        <CardFooter className="p-2 border-t border-border/50 text-xs text-muted-foreground flex justify-between items-center"> {/* Adjusted padding: was pl-7 */}
+        <CardFooter className="p-2 border-t border-border/50 text-xs text-muted-foreground flex justify-between items-center">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -165,3 +168,5 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
     </Card>
   );
 }
+
+    
