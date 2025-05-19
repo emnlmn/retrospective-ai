@@ -290,7 +290,7 @@ export default function BoardPage() {
       </div>
 
       <ScrollArea className="flex-grow -mx-1"> {/* Negative margin to allow columns to use full space */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-[800px] md:min-w-full px-1">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-[1200px] md:min-w-full px-1">
           {columnIds.map(columnId => (
             <BoardColumnClient
               key={columnId}
