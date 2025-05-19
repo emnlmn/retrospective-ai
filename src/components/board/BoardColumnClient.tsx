@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -6,8 +7,9 @@ import RetroCard from './RetroCard';
 import { Button } from '@/components/ui/button';
 import { PlusCircle } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
-import { Card as ShadCard, CardContent, CardFooter } from '@/components/ui/card'; // Renamed to avoid conflict
+import { Card as ShadCard, CardContent, CardFooter } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 interface BoardColumnClientProps {
   columnId: ColumnId;
@@ -35,7 +37,7 @@ export default function BoardColumnClient({
   const [newCardContent, setNewCardContent] = useState('');
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [draggedItem, setDraggedItem] = useState<CardData & { sourceColumnId?: ColumnId } | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<ColumnId | null>(null);
+  const [isDragOverListArea, setIsDragOverListArea] = useState(false);
 
   const handleAddCardSubmit = () => {
     if (newCardContent.trim()) {
@@ -49,12 +51,12 @@ export default function BoardColumnClient({
     setDraggedItem({ ...card, sourceColumnId: srcColId });
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleListAreaDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault(); 
-    setDragOverColumn(columnId);
+    setIsDragOverListArea(true);
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleListAreaDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (draggedItem && draggedItem.sourceColumnId) {
       const dropTargetElement = e.target instanceof HTMLElement ? e.target.closest('[data-card-id]') : null;
@@ -62,38 +64,40 @@ export default function BoardColumnClient({
       
       let destinationIndex = cards.length; 
       if (dropTargetId) {
+        const targetCard = cards.find(c => c.id === dropTargetId);
         const targetCardIndex = cards.findIndex(c => c.id === dropTargetId);
-        if (targetCardIndex !== -1) {
-          const targetRect = dropTargetElement!.getBoundingClientRect();
-          const isDroppingInUpperHalf = e.clientY < targetRect.top + targetRect.height / 2;
-          destinationIndex = isDroppingInUpperHalf ? targetCardIndex : targetCardIndex + 1;
+
+        if (targetCard && targetCardIndex !== -1 && dropTargetElement) {
+            const targetRect = dropTargetElement.getBoundingClientRect();
+            const isDroppingInUpperHalf = e.clientY < targetRect.top + targetRect.height / 2;
+            destinationIndex = isDroppingInUpperHalf ? targetCardIndex : targetCardIndex + 1;
         }
       }
+      // Ensure destinationIndex is not out of bounds if dropping at the end of a filtered list
+      if (destinationIndex > cards.length) {
+          destinationIndex = cards.length;
+      }
+
       onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, destinationIndex);
     }
     setDraggedItem(null);
-    setDragOverColumn(null);
+    setIsDragOverListArea(false);
   };
   
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleListAreaDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-        setDragOverColumn(null);
+        setIsDragOverListArea(false);
     }
   };
 
   return (
-    <div 
-      className={`flex flex-col h-full rounded-lg transition-all duration-300 p-1 ${dragOverColumn === columnId ? 'bg-accent/10 ring-1 ring-accent' : ''}`}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-      onDragLeave={handleDragLeave}
-    >
-      <div className="flex justify-between items-center mb-2 px-1"> {/* Reduced mb */}
+    <div className="flex flex-col h-full rounded-lg p-1 bg-card/50"> {/* Adjusted background slightly for column visibility */}
+      <div className="flex justify-between items-center mb-2 px-1">
         <h3 className="text-base font-semibold text-foreground">{title} ({cards.length})</h3>
       </div>
 
       {isAddingCard ? (
-        <div className="mb-2 px-1"> {/* Reduced mb */}
+        <div className="mb-2 px-1">
           <ShadCard className="bg-card/80 shadow-md">
             <CardContent className="p-2">
               <Textarea
@@ -123,15 +127,23 @@ export default function BoardColumnClient({
       ) : (
         <Button 
           variant="outline" 
-          className="w-full mb-2 text-muted-foreground hover:text-foreground hover:border-primary/70 py-3"  // Reduced mb
+          className="w-full mb-2 text-muted-foreground hover:text-foreground hover:border-primary/70 py-3"
           onClick={() => setIsAddingCard(true)}
         >
           <PlusCircle className="mr-2 h-4 w-4" /> Add Card
         </Button>
       )}
 
-      <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 240px)'}}> {/* Adjusted max height slightly due to padding changes elsewhere */}
-        <div className="space-y-2 px-1 pb-1 min-h-[100px]"> {/* Reduced space-y */}
+      <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}> {/* Adjusted max height slightly */}
+        <div 
+          className={cn(
+            "space-y-2 px-1 pb-1 min-h-[100px] rounded-md transition-all duration-150",
+            isDragOverListArea ? 'bg-accent/20 ring-2 ring-accent' : 'bg-transparent' // Apply highlight here
+          )}
+          onDragOver={handleListAreaDragOver}
+          onDrop={handleListAreaDrop}
+          onDragLeave={handleListAreaDragLeave}
+        >
           {cards.map((card) => (
             <RetroCard
               key={card.id}
@@ -152,3 +164,4 @@ export default function BoardColumnClient({
     </div>
   );
 }
+
