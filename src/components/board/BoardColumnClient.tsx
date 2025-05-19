@@ -88,12 +88,12 @@ export default function BoardColumnClient({
       onDrop={handleDrop}
       onDragLeave={handleDragLeave}
     >
-      <div className="flex justify-between items-center mb-3 px-1">
+      <div className="flex justify-between items-center mb-2 px-1"> {/* Reduced mb */}
         <h3 className="text-base font-semibold text-foreground">{title} ({cards.length})</h3>
       </div>
 
       {isAddingCard ? (
-        <div className="mb-3 px-1">
+        <div className="mb-2 px-1"> {/* Reduced mb */}
           <ShadCard className="bg-card/80 shadow-md">
             <CardContent className="p-2">
               <Textarea
@@ -123,15 +123,15 @@ export default function BoardColumnClient({
       ) : (
         <Button 
           variant="outline" 
-          className="w-full mb-3 text-muted-foreground hover:text-foreground hover:border-primary/70 py-3" 
+          className="w-full mb-2 text-muted-foreground hover:text-foreground hover:border-primary/70 py-3"  // Reduced mb
           onClick={() => setIsAddingCard(true)}
         >
           <PlusCircle className="mr-2 h-4 w-4" /> Add Card
         </Button>
       )}
 
-      <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 250px)'}}> {/* Adjust max height as needed */}
-        <div className="space-y-3 px-1 pb-1 min-h-[100px]">
+      <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 240px)'}}> {/* Adjusted max height slightly due to padding changes elsewhere */}
+        <div className="space-y-2 px-1 pb-1 min-h-[100px]"> {/* Reduced space-y */}
           {cards.map((card) => (
             <RetroCard
               key={card.id}

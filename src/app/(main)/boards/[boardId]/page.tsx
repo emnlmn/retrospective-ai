@@ -256,9 +256,9 @@ export default function BoardPage() {
   const columnIds = Object.keys(DEFAULT_COLUMNS_CONFIG) as ColumnId[];
 
   return (
-    <div className="h-full flex flex-col space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center gap-3">
+    <div className="h-full flex flex-col space-y-3"> {/* Reduced space-y */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2"> {/* Reduced gap */}
+        <div className="flex items-center gap-2"> {/* Reduced gap */}
             <Button variant="outline" size="icon" asChild aria-label="Back to boards">
                 <Link href="/"><ArrowLeft className="h-5 w-5" /></Link>
             </Button>
@@ -290,7 +290,7 @@ export default function BoardPage() {
       </div>
 
       <ScrollArea className="flex-grow -mx-1"> {/* Negative margin to allow columns to use full space */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-[1200px] md:min-w-full px-1">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 min-w-[1200px] md:min-w-full px-1"> {/* Reduced gap */}
           {columnIds.map(columnId => (
             <BoardColumnClient
               key={columnId}

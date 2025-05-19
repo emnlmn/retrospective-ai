@@ -5,7 +5,7 @@ import type { CardData, ColumnId } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import { ThumbsUp, Edit3, Trash2, GripVertical, Check, X, MoreVertical } from 'lucide-react';
+import { ThumbsUp, Edit3, Trash2, Check, X, MoreVertical } from 'lucide-react'; // Removed GripVertical
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import {
@@ -75,10 +75,8 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
           isEditing ? "cursor-default" : "cursor-grab active:cursor-grabbing"
         )}
     >
-      <div className="absolute top-1/2 -translate-y-1/2 left-1.5 opacity-30 group-hover:opacity-100 transition-opacity">
-        {!isEditing && <GripVertical size={16} className="text-muted-foreground" />}
-      </div>
-      <CardContent className="p-3 pl-7"> {/* Added pl-7 for grip handle space */}
+      {/* Removed GripVertical icon and its container div */}
+      <CardContent className="p-3"> {/* Adjusted padding: was pl-7 */}
         {isEditing && canEditOrDelete ? (
           <div className="space-y-2">
             <Textarea
@@ -110,7 +108,7 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
         )}
       </CardContent>
       {!isEditing && (
-        <CardFooter className="p-2 pl-7 border-t border-border/50 text-xs text-muted-foreground flex justify-between items-center">
+        <CardFooter className="p-2 border-t border-border/50 text-xs text-muted-foreground flex justify-between items-center"> {/* Adjusted padding: was pl-7 */}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -125,7 +123,7 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
           <div className="flex items-center space-x-1">
             <Button 
                 variant="ghost" 
-                size="icon-sm" // Custom size or adjust padding if needed
+                size="icon-sm" 
                 className={cn("h-7 w-7", hasUpvoted && "text-primary hover:text-primary")} 
                 onClick={() => onUpvote(card.id)} 
                 aria-label="Upvote card"
