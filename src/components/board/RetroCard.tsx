@@ -12,7 +12,6 @@ import { cn } from '@/lib/utils';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
@@ -72,11 +71,11 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
         draggable={!isEditing}
         onDragStart={handleDragStart}
         className={cn(
-          "bg-card/90 shadow-sm hover:shadow-md transition-shadow duration-200 relative group border", // Removed border-border/70 to allow specific border colors
+          "bg-card/90 shadow-sm hover:shadow-md transition-shadow duration-200 relative group border",
           isEditing ? "cursor-default" : "cursor-grab active:cursor-grabbing",
           columnId === 'wentWell' && 'border-l-4 border-l-accent',
           columnId === 'toImprove' && 'border-l-4 border-l-destructive',
-          columnId !== 'wentWell' && columnId !== 'toImprove' && 'border-border/70' // Default border for other columns
+          columnId !== 'wentWell' && columnId !== 'toImprove' && 'border-border/70'
         )}
     >
       <CardContent className="p-3">
@@ -112,17 +111,15 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
       </CardContent>
       {!isEditing && (
         <CardFooter className="p-2 border-t border-border/50 text-xs text-muted-foreground flex justify-between items-center">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="truncate max-w-[100px] hover:underline">{card.userName}</span>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{card.userName}</p>
-                <p>{formatDistanceToNow(new Date(card.createdAt), { addSuffix: true })}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="truncate max-w-[100px] hover:underline">{card.userName}</span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{card.userName}</p>
+              <p>{formatDistanceToNow(new Date(card.createdAt), { addSuffix: true })}</p>
+            </TooltipContent>
+          </Tooltip>
           <div className="flex items-center space-x-1">
             <Button 
                 variant="ghost" 
@@ -168,5 +165,3 @@ export default function RetroCard({ card, columnId, onUpdate, onDelete, onUpvote
     </Card>
   );
 }
-
-    

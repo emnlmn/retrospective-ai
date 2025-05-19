@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card as ShadCard, CardContent, CardFooter } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 
 interface BoardColumnClientProps {
   columnId: ColumnId;
@@ -133,36 +135,35 @@ export default function BoardColumnClient({
           <PlusCircle className="mr-2 h-4 w-4" /> Add Card
         </Button>
       )}
-
-      <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
-        <div 
-          className={cn(
-            "space-y-2 px-1 pb-1 min-h-[100px] rounded-md transition-all duration-150",
-            isDragOverListArea ? 'bg-accent/20 ring-2 ring-accent' : 'bg-transparent'
-          )}
-          onDragOver={handleListAreaDragOver}
-          onDrop={handleListAreaDrop}
-          onDragLeave={handleListAreaDragLeave}
-        >
-          {cards.map((card) => (
-            <RetroCard
-              key={card.id}
-              card={card}
-              columnId={columnId} // Pass columnId here
-              onUpdate={onUpdateCard}
-              onDelete={onDeleteCard}
-              onUpvote={onUpvoteCard}
-              currentUserId={currentUserId}
-              onDragStartItem={handleDragStart}
-            />
-          ))}
-          {cards.length === 0 && !isAddingCard && (
-             <p className="text-sm text-muted-foreground text-center pt-8">No cards yet.</p>
-          )}
-        </div>
-      </ScrollArea>
+      <TooltipProvider>
+        <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
+          <div 
+            className={cn(
+              "space-y-2 px-1 pb-1 min-h-[100px] rounded-md transition-all duration-150",
+              isDragOverListArea ? 'bg-accent/20 ring-2 ring-accent' : 'bg-transparent'
+            )}
+            onDragOver={handleListAreaDragOver}
+            onDrop={handleListAreaDrop}
+            onDragLeave={handleListAreaDragLeave}
+          >
+            {cards.map((card) => (
+              <RetroCard
+                key={card.id}
+                card={card}
+                columnId={columnId} 
+                onUpdate={onUpdateCard}
+                onDelete={onDeleteCard}
+                onUpvote={onUpvoteCard}
+                currentUserId={currentUserId}
+                onDragStartItem={handleDragStart}
+              />
+            ))}
+            {cards.length === 0 && !isAddingCard && (
+              <p className="text-sm text-muted-foreground text-center pt-8">No cards yet.</p>
+            )}
+          </div>
+        </ScrollArea>
+      </TooltipProvider>
     </div>
   );
 }
-
-    
