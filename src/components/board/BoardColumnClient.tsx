@@ -95,22 +95,22 @@ export default function BoardColumnClient({
             const topEdgeZoneEnd = rect.top + rect.height * edgeRatio;
             const bottomEdgeZoneStart = rect.bottom - rect.height * edgeRatio;
 
-            if (clientY < rect.top && i === 0) {
+            if (clientY < rect.top && i === 0) { // Case: Above the very first card
                  newCalculatedIndex = 0;
                  potentialMergeId = null;
                  break;
             }
             
-            if (clientY >= rect.top && clientY < topEdgeZoneEnd) {
+            if (clientY >= rect.top && clientY < topEdgeZoneEnd) { // Top edge for positioning
                 newCalculatedIndex = i;
                 potentialMergeId = null;
                 break;
-            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) {
+            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) { // Middle zone for merging
                 if (cardId !== draggedItem.id) { 
                     newCalculatedIndex = null; 
-                    potentialMergeId = cardId;
-                } else { 
-                    potentialMergeId = null;
+                    potentialMergeId = cardId; // Set as potential merge target
+                } else { // Dragging over itself in the middle zone - treat as positioning
+                    potentialMergeId = null; // Not a merge target
                     if (clientY < rect.top + rect.height / 2) {
                         newCalculatedIndex = i;
                     } else {
@@ -118,13 +118,13 @@ export default function BoardColumnClient({
                     }
                 }
                 break;
-            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) {
+            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) { // Bottom edge for positioning
                 newCalculatedIndex = i + 1;
                 potentialMergeId = null;
                 break;
             }
             
-            if (i === cardElements.length - 1 && clientY >= rect.bottom) {
+            if (i === cardElements.length - 1 && clientY >= rect.bottom) { // Case: Below the very last card
                  newCalculatedIndex = cards.length; 
                  potentialMergeId = null;
             }
@@ -141,12 +141,15 @@ export default function BoardColumnClient({
     if (!draggedItem) return;
 
     if (mergeTargetId && mergeTargetId !== draggedItem.id) {
+        // If mergeTargetId is set, prioritize merge operation
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, -1, mergeTargetId);
     }
     else if (placeholderIndex !== null) {
+        // Otherwise, if placeholderIndex is set, perform positioning
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, placeholderIndex, undefined);
     }
     else {
+        // Fallback positioning if neither mergeTarget nor placeholder is explicitly set (e.g., dropping in an empty column with no cards)
         const listElement = e.currentTarget;
         const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
         let finalFallbackIndex = cards.length; 
@@ -185,7 +188,7 @@ export default function BoardColumnClient({
             <Button
               variant="ghost"
               size="icon"
-              className="text-muted-foreground hover:text-primary"
+              className="text-muted-foreground hover:text-accent-foreground"
               onClick={() => setIsAddingCard(true)}
               aria-label="Add new card"
             >
@@ -257,7 +260,7 @@ export default function BoardColumnClient({
             {cards.length === 0 && !isAddingCard && placeholderIndex === null && !mergeTargetId && (
               <p className="text-sm text-muted-foreground text-center pt-8">No cards yet.</p>
             )}
-            {cards.length === 0 && placeholderIndex === 0 && !mergeTargetId && (
+            {cards.length === 0 && placeholderIndex === 0 && !mergeTargetId && ( // Placeholder for empty list
                 <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
             )}
           </div>
@@ -266,3 +269,4 @@ export default function BoardColumnClient({
     </div>
   );
 }
+
