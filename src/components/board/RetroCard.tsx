@@ -40,7 +40,6 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
   const canEditOrDelete = card.userId === currentUserId;
   const hasUpvoted = card.upvotes.includes(currentUserId);
 
-  // Sync editedContent if card.content prop changes externally
   useEffect(() => {
     if (card.content !== editedContent && !isEditing) {
         setEditedContent(card.content);
@@ -80,7 +79,6 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
   const relativeDate = useMemo(() => {
     try {
       const date = new Date(card.createdAt);
-      // Check if date is valid
       if (isNaN(date.getTime())) {
         return "Invalid date";
       }
@@ -99,7 +97,7 @@ const RetroCard = memo(function RetroCard({ card, columnId, onUpdate, onDelete, 
         className={cn(
           "bg-card/90 shadow-sm hover:shadow-md transition-shadow duration-200 relative group border",
           isEditing ? "cursor-default ring-2 ring-primary" : "cursor-grab active:cursor-grabbing",
-          columnId === 'wentWell' && 'border-l-4 border-l-accent',
+          columnId === 'wentWell' && 'border-l-4 border-l-success', // Changed to success
           columnId === 'toImprove' && 'border-l-4 border-l-destructive',
           (columnId !== 'wentWell' && columnId !== 'toImprove') && 'border-border/70'
         )}

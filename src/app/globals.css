@@ -33,6 +33,9 @@ body {
     --destructive: 0 70% 50%; /* Adjusted for better visibility on dark */
     --destructive-foreground: 0 0% 98%;
 
+    --success: 140 35% 50%; /* Green for success states */
+    --success-foreground: 210 40% 98%;
+
     --border: 258 10% 30%;
     --input: 258 10% 30%;
     --ring: 243 40% 70%;
@@ -80,6 +83,9 @@ body {
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
+
+    --success: 140 35% 45%; /* Green for success states (light theme) */
+    --success-foreground: 210 40% 98%;
 
     --border: 258 20% 80%;
     --input: 258 20% 85%;

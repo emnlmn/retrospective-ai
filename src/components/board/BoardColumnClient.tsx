@@ -12,7 +12,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-// Type for the dragged item prop
 type DraggedItemType = CardData & { sourceColumnId: ColumnId };
 
 interface BoardColumnClientProps {
@@ -23,10 +22,16 @@ interface BoardColumnClientProps {
   onUpdateCard: (cardId: string, newContent: string) => void;
   onDeleteCard: (cardId: string, columnId: ColumnId) => void;
   onUpvoteCard: (cardId: string) => void;
-  onDragEnd: (draggedCardId: string, sourceColumnId: ColumnId, destColumnId: ColumnId, destinationIndex: number) => void;
+  onDragEnd: (
+    draggedCardId: string, 
+    sourceColumnId: ColumnId, 
+    destColumnId: ColumnId, 
+    destinationIndex: number,
+    mergeTargetCardId?: string // Added for merge
+  ) => void;
   currentUserId: string;
-  draggedItem: DraggedItemType | null; // Prop from parent
-  setDraggedItem: (item: DraggedItemType | null) => void; // Prop from parent
+  draggedItem: DraggedItemType | null;
+  setDraggedItem: (item: DraggedItemType | null) => void;
 }
 
 export default function BoardColumnClient({
@@ -39,12 +44,13 @@ export default function BoardColumnClient({
   onUpvoteCard,
   onDragEnd,
   currentUserId,
-  draggedItem, // Use from props
-  setDraggedItem, // Use from props
+  draggedItem,
+  setDraggedItem,
 }: BoardColumnClientProps) {
   const [newCardContent, setNewCardContent] = useState('');
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [isDragOverListArea, setIsDragOverListArea] = useState(false);
+  const [placeholderIndex, setPlaceholderIndex] = useState<number | null>(null);
 
   const handleAddCardSubmit = useCallback(() => {
     if (newCardContent.trim()) {
@@ -55,45 +61,98 @@ export default function BoardColumnClient({
   }, [newCardContent, onAddCard, columnId]);
 
   const handleDragStart = useCallback((card: CardData, srcColId: ColumnId) => {
-    setDraggedItem({ ...card, sourceColumnId: srcColId }); // Call prop setDraggedItem
+    setDraggedItem({ ...card, sourceColumnId: srcColId });
   }, [setDraggedItem]);
 
   const handleListAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); 
-    if (draggedItem) { 
-        setIsDragOverListArea(true);
+    e.preventDefault();
+    if (draggedItem && draggedItem.sourceColumnId !== columnId) { // Only show placeholder if dragging from different column for now or different position
+        setIsDragOverListArea(true); // General highlight
+    } else if (draggedItem) {
+         setIsDragOverListArea(true);
     }
-  }, [draggedItem]);
+
+
+    if (draggedItem) {
+      const listElement = e.currentTarget; // The div with onDragOver
+      let newIndex = cards.length;
+
+      const cardElements = Array.from(listElement.querySelectorAll('[data-card-id]')) as HTMLElement[];
+      for (let i = 0; i < cardElements.length; i++) {
+        const cardEl = cardElements[i];
+        if (cardEl.getAttribute('data-card-id') === draggedItem.id) continue; // Don't compare with the dragged item itself
+
+        const rect = cardEl.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        if (e.clientY < midY) {
+          newIndex = i;
+          break;
+        }
+      }
+      // If dragging within the same column, adjust index if moving item downwards
+      if (draggedItem.sourceColumnId === columnId) {
+        const originalIndex = cards.findIndex(c => c.id === draggedItem.id);
+        if (originalIndex !== -1 && originalIndex < newIndex) {
+          // If the card is dragged downwards past its original position,
+          // the placeholder index effectively becomes one less because the card itself will be removed from its old spot.
+          // However, for display purposes, newIndex is correct based on visual elements.
+          // The actual drop logic in BoardPage will handle the final index correctly.
+        }
+      }
+      setPlaceholderIndex(newIndex);
+    }
+  }, [draggedItem, cards, columnId]);
 
   const handleListAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (draggedItem && draggedItem.sourceColumnId) { // Use draggedItem from props
-      const dropTargetElement = e.target instanceof HTMLElement ? e.target.closest('[data-card-id]') : null;
-      const dropTargetId = dropTargetElement?.getAttribute('data-card-id');
-      
-      let destinationIndex = cards.length; 
-      if (dropTargetId) {
-        const targetCardIndex = cards.findIndex(c => c.id === dropTargetId);
+    if (draggedItem && draggedItem.sourceColumnId) {
+      const listElement = e.currentTarget;
+      const dropTargetCardElement = e.target instanceof HTMLElement ? e.target.closest('[data-card-id]') : null;
+      const potentialMergeTargetId = dropTargetCardElement?.getAttribute('data-card-id');
 
-        if (targetCardIndex !== -1 && dropTargetElement) {
-            const targetRect = dropTargetElement.getBoundingClientRect();
-            const isDroppingInUpperHalf = e.clientY < targetRect.top + targetRect.height / 2;
-            destinationIndex = isDroppingInUpperHalf ? targetCardIndex : targetCardIndex + 1;
+      if (potentialMergeTargetId && potentialMergeTargetId !== draggedItem.id) {
+        onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, -1, potentialMergeTargetId);
+      } else {
+        let destinationIndex = cards.length; // Default to end of list
+        const cardElements = Array.from(listElement.querySelectorAll('[data-card-id]:not([data-placeholder])')) as HTMLElement[];
+
+        for (let i = 0; i < cardElements.length; i++) {
+            const cardEl = cardElements[i];
+             // Skip the dragged item itself if it's still in the DOM list during calculation
+            if (cardEl.getAttribute('data-card-id') === draggedItem.id) continue;
+
+            const rect = cardEl.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY < midY) {
+                destinationIndex = i;
+                // If the dragged item was originally before this position in the same column,
+                // and we're moving it downwards, the effective index is one less.
+                // However, the placeholderIndex calculation should align with this.
+                // The handleDragEnd in BoardPage will manage the final array math.
+                break;
+            }
         }
-      }
-      
-      destinationIndex = Math.max(0, Math.min(destinationIndex, cards.length));
+         // If dragging within the same column and item moved downwards, adjust index for splice
+        if (draggedItem.sourceColumnId === columnId) {
+            const originalOrder = cards.find(c => c.id === draggedItem.id)?.order;
+            const targetOrderEquivalent = destinationIndex; // placeholderIndex is the visual slot
+            if (originalOrder !== undefined && originalOrder < targetOrderEquivalent) {
+                // destinationIndex--; // Decrement because the item itself will be removed before splice
+            }
+        }
 
-      onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, destinationIndex);
-      // Do not call setDraggedItem(null) here; parent (BoardPage) will do it after state update.
+        onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, destinationIndex, undefined);
+      }
     }
-    // setDraggedItem(null); // This line is removed, parent will handle it.
+    setPlaceholderIndex(null);
     setIsDragOverListArea(false);
-  }, [draggedItem, cards, columnId, onDragEnd]);
+    // draggedItem is reset by parent (BoardPage)
+  }, [draggedItem, cards, columnId, onDragEnd, setPlaceholderIndex, setIsDragOverListArea]);
   
   const handleListAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
         setIsDragOverListArea(false);
+        setPlaceholderIndex(null);
     }
   }, []);
 
@@ -144,32 +203,37 @@ export default function BoardColumnClient({
         <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
           <div 
             className={cn(
-              "space-y-2 px-1 pb-1 min-h-[100px] rounded-md transition-all duration-150",
+              "space-y-2 px-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative", // Added relative for placeholder
               isDragOverListArea ? 'bg-accent/20 ring-2 ring-accent' : 'bg-transparent'
             )}
             onDragOver={handleListAreaDragOver}
             onDrop={handleListAreaDrop}
             onDragLeave={handleListAreaDragLeave}
-            onDragEnd={() => { // Clean up draggedItem if drag ends outside a valid drop zone ONLY if this component set it.
-                 // This might need adjustment. Parent (BoardPage) now controls draggedItem.
-                 // It should be reset in BoardPage's handleDragEnd or if drag operation is cancelled globally.
-                 // For now, BoardPage's handleDragEnd calls setDraggedItem(null).
-            }}
           >
-            {cards.map((card) => (
-              <RetroCard
-                key={card.id}
-                card={card}
-                columnId={columnId} 
-                onUpdate={onUpdateCard}
-                onDelete={onDeleteCard}
-                onUpvote={onUpvoteCard}
-                currentUserId={currentUserId}
-                onDragStartItem={handleDragStart}
-              />
+            {cards.map((card, index) => (
+              <React.Fragment key={card.id}>
+                {placeholderIndex === index && (
+                  <div className="h-[2px] my-1.5 bg-primary rounded-full w-full" data-placeholder />
+                )}
+                <RetroCard
+                  card={card}
+                  columnId={columnId} 
+                  onUpdate={onUpdateCard}
+                  onDelete={onDeleteCard}
+                  onUpvote={onUpvoteCard}
+                  currentUserId={currentUserId}
+                  onDragStartItem={handleDragStart}
+                />
+              </React.Fragment>
             ))}
-            {cards.length === 0 && !isAddingCard && (
+            {placeholderIndex === cards.length && (
+              <div className="h-[2px] my-1.5 bg-primary rounded-full w-full" data-placeholder />
+            )}
+            {cards.length === 0 && !isAddingCard && placeholderIndex === null && (
               <p className="text-sm text-muted-foreground text-center pt-8">No cards yet.</p>
+            )}
+             {cards.length === 0 && placeholderIndex === 0 && (
+                <div className="h-[2px] my-1.5 bg-primary rounded-full w-full" data-placeholder />
             )}
           </div>
         </ScrollArea>
@@ -177,4 +241,3 @@ export default function BoardColumnClient({
     </div>
   );
 }
-
