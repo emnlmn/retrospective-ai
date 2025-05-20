@@ -21,47 +21,42 @@ export async function GET(request: NextRequest, { params }: Context) {
 
   const stream = new ReadableStream({
     start(controller) {
-      let initialBoardStateSent = false; // Flag to track if initial state (even if null) has been attempted to send
-
       const boardUpdateHandler = (updatedBoard: BoardData | null) => {
-        // This handler is for ALL updates, including one that might be the "initial" one we waited for.
+        // This handler is for ALL updates, including the initial state.
+        // It only sends if the update is for *this* boardId or if it's a null update (signifying deletion/not found).
         if (updatedBoard === null || (updatedBoard && updatedBoard.id === boardId)) {
           try {
             const message = `event: boardUpdate\ndata: ${JSON.stringify(updatedBoard)}\n\n`;
             controller.enqueue(new TextEncoder().encode(message));
-            initialBoardStateSent = true; // Mark that we've sent *something*
             console.log(`SSE: Sent boardUpdate for ${boardId}`, updatedBoard);
           } catch (e) {
-            console.error("Error enqueuing SSE message:", e);
+            console.error(`Error enqueuing SSE message for board ${boardId}:`, e);
+            // Potentially close connection if controller is broken
+            try {
+              if (controller.desiredSize !== null) controller.close();
+            } catch (closeError) {
+              console.error(`Error closing controller for board ${boardId} after enqueue error:`, closeError);
+            }
           }
+        } else if (updatedBoard && updatedBoard.id !== boardId) {
+          // This handles a rare case where an event for a different board ID might be caught.
+          // It shouldn't happen with `boardUpdate:${boardId}` but good for robustness.
+          console.log(`SSE: Ignored boardUpdate for ${updatedBoard.id} on connection for ${boardId}`);
         }
       };
 
-      // Always subscribe to the main handler for future updates
+      // Subscribe to specific board updates
       emitter.on(`boardUpdate:${boardId}`, boardUpdateHandler);
       console.log(`SSE: Subscribed to boardUpdate:${boardId}`);
 
-      // Attempt to get current state
+      // Send current state immediately after subscribing.
+      // This ensures the client gets the initial status (board data or null if not found).
       const boardNow = getBoardById(boardId);
+      boardUpdateHandler(boardNow); // Use the same handler for initial state.
 
-      if (boardNow) {
-        // Board exists, send it as initial state using the main handler
-        console.log(`SSE: Board ${boardId} found initially. Sending state.`);
-        boardUpdateHandler(boardNow);
-      } else {
-        // Board doesn't exist at this very moment.
-        // It might be a brand new board being created, or a truly invalid ID.
-        // We DO NOT send an immediate null here. We'll wait for the first event
-        // from the emitter. If addBoardToDB emits for this boardId, boardUpdateHandler
-        // will catch it and send the board data. If it's an invalid ID, no event
-        // will come, and the client will show "Board not found or is being loaded...".
-        console.warn(`SSE for ${boardId}: Board not found initially. Waiting for first event via emitter.`);
-      }
-      
       request.signal.addEventListener('abort', () => {
         emitter.off(`boardUpdate:${boardId}`, boardUpdateHandler);
         try {
-            // Check if controller is still open before trying to close
             if (controller.desiredSize !== null) { 
                 controller.close();
             }
@@ -78,6 +73,8 @@ export async function GET(request: NextRequest, { params }: Context) {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no', // Useful for Nginx environments
     },
   });
 }
+
