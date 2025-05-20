@@ -5,8 +5,10 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { PlusCircle, ArrowRight } from 'lucide-react'; // Removed Eye icon, not used
+import { PlusCircle, ArrowRight } from 'lucide-react';
 import type { BoardData } from '@/lib/types';
+import { INITIAL_COLUMNS_DATA } from '@/lib/types'; // Import INITIAL_COLUMNS_DATA
+import { v4 as uuidv4 } from 'uuid'; // Import uuid
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import CreateBoardDialog from '@/components/board/CreateBoardDialog';
 import { format } from 'date-fns';
@@ -116,7 +118,14 @@ export default function HomePage() {
       <CreateBoardDialog
         isOpen={isCreateBoardDialogOpen}
         onClose={() => setIsCreateBoardDialogOpen(false)}
-        onBoardCreated={(newBoard) => {
+        onBoardCreated={(title: string) => { // Expect title string
+          const newBoard: BoardData = {     // Create BoardData object here
+            id: uuidv4(),
+            title,
+            columns: JSON.parse(JSON.stringify(INITIAL_COLUMNS_DATA)),
+            cards: {},
+            createdAt: new Date().toISOString(),
+          };
           setBoards((prevBoards) => [newBoard, ...prevBoards]);
           setIsCreateBoardDialogOpen(false);
         }}
