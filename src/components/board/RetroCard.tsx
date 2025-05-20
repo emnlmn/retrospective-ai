@@ -82,12 +82,12 @@ const RetroCard = memo(function RetroCard({
       onUpdate(card.id, editedContent.trim());
     }
     setIsEditing(false);
-  }, [editedContent, card.content, card.id, onUpdate, isBoardConfirmedValid]);
+  }, [editedContent, card.content, card.id, onUpdate, isBoardConfirmedValid, setIsEditing]);
 
   const handleCancelEdit = useCallback(() => {
     setEditedContent(card.content);
     setIsEditing(false);
-  }, [card.content]);
+  }, [card.content, setIsEditing]);
 
   const handleDragStartInternal = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!isBoardConfirmedValid || isEditing || !isDraggable) {
@@ -117,16 +117,16 @@ const RetroCard = memo(function RetroCard({
     }
   }, [card.createdAt]);
 
-  const handleDirectUpvote = () => {
+  const handleDirectUpvote = useCallback(() => {
     if (!isBoardConfirmedValid || isEditing) return;
     onUpvote(card.id);
-  };
+  }, [isBoardConfirmedValid, isEditing, onUpvote, card.id]);
 
-  const commonMenuItems = (
+  const menuItemsContent = (
     <>
       <DropdownMenuItem onClick={handleDirectUpvote} disabled={!isBoardConfirmedValid || isEditing}>
         <ThumbsUp className="mr-2 h-4 w-4" />
-        <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'} ({card.upvotes.length})</span>
+        <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'}</span>
       </DropdownMenuItem>
       {canEditOrDelete && (
         <>
@@ -171,11 +171,11 @@ const RetroCard = memo(function RetroCard({
     </>
   );
 
-  const commonContextMenuItems = (
+  const contextMenuItemsContent = (
      <>
       <ContextMenuItem onClick={handleDirectUpvote} disabled={!isBoardConfirmedValid || isEditing}>
         <ThumbsUp className="mr-2 h-4 w-4" />
-        <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'} ({card.upvotes.length})</span>
+        <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'}</span>
       </ContextMenuItem>
       {canEditOrDelete && (
         <>
@@ -231,11 +231,14 @@ const RetroCard = memo(function RetroCard({
             onDragEnd={handleDragEndInternal}
             className={cn(
               "bg-card/90 shadow-sm hover:shadow-md transition-all duration-200 relative group border min-h-[80px] flex flex-col",
-              isEditing ? "ring-2 ring-primary cursor-default" : (isBoardConfirmedValid && isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"),
-              isMergeTarget && !isEditing && isBoardConfirmedValid && "ring-2 ring-offset-1 ring-primary shadow-lg",
-              !isMergeTarget && columnId === 'wentWell' && 'border-l-4 border-l-success',
-              !isMergeTarget && columnId === 'toImprove' && 'border-l-4 border-l-destructive',
-              !isMergeTarget && columnId === 'actionItems' && 'border-l-4 border-l-accent',
+              isEditing ? "ring-2 ring-primary cursor-default" 
+                        : cn(
+                            (isBoardConfirmedValid && isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"),
+                            isMergeTarget && "ring-2 ring-offset-1 ring-primary shadow-lg",
+                            !isMergeTarget && columnId === 'wentWell' && 'border-l-4 border-l-success',
+                            !isMergeTarget && columnId === 'toImprove' && 'border-l-4 border-l-destructive',
+                            !isMergeTarget && columnId === 'actionItems' && 'border-l-4 border-l-accent'
+                          ),
               isBeingDragged && "opacity-50",
               !isBoardConfirmedValid && "opacity-60"
             )}
@@ -254,7 +257,7 @@ const RetroCard = memo(function RetroCard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  {commonMenuItems}
+                  {menuItemsContent}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -267,7 +270,7 @@ const RetroCard = memo(function RetroCard({
                   ref={textareaRef}
                   value={editedContent}
                   onChange={(e) => setEditedContent(e.target.value)}
-                  className="w-full min-h-[60px] text-sm bg-background/80 focus:ring-primary border-input"
+                  className="w-full min-h-[60px] text-sm bg-transparent border-0 focus:ring-0 focus:outline-none resize-none text-card-foreground whitespace-pre-wrap py-1"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -301,8 +304,9 @@ const RetroCard = memo(function RetroCard({
                 size="icon-sm"
                 className={cn(
                   "h-6 w-6 p-0.5 hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity duration-150",
-                  hasUpvoted && "text-primary hover:text-primary/80 group-hover:opacity-100", // Ensure opacity is 100 if upvoted and hovered
-                  !isBoardConfirmedValid || isEditing ? "cursor-not-allowed" : "cursor-pointer"
+                  hasUpvoted && "text-primary hover:text-primary/80 group-hover:opacity-100", 
+                  (!isBoardConfirmedValid || isEditing) && "cursor-not-allowed opacity-50 group-hover:opacity-50",
+                  isBoardConfirmedValid && !isEditing && "cursor-pointer"
                 )}
                 onClick={handleDirectUpvote}
                 aria-label={hasUpvoted ? 'Remove upvote' : 'Upvote'}
@@ -317,7 +321,7 @@ const RetroCard = memo(function RetroCard({
       </ContextMenuTrigger>
       {isBoardConfirmedValid && !isEditing && isDraggable && (
         <ContextMenuContent className="w-56">
-          {commonContextMenuItems}
+          {contextMenuItemsContent}
         </ContextMenuContent>
       )}
     </ContextMenu>
