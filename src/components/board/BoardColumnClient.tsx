@@ -81,7 +81,8 @@ export default function BoardColumnClient({
     }
 
     const listElement = e.currentTarget;
-    const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
+    const cardElements = Array.from(listElement.children).filter(child => child.querySelector('[data-card-id]') !== null) as HTMLElement[];
+
 
     let newCalculatedIndex: number | null = cards.length;
     let potentialMergeId: string | null = null;
@@ -90,35 +91,34 @@ export default function BoardColumnClient({
         newCalculatedIndex = 0;
     } else {
         for (let i = 0; i < cardElements.length; i++) {
-            const cardEl = cardElements[i];
+            const cardWrapperEl = cardElements[i]; // This is the div wrapper for the card
+            const cardEl = cardWrapperEl.querySelector<HTMLElement>('[data-card-id]');
+            if (!cardEl) continue;
             const cardId = cardEl.dataset.cardId;
             if (!cardId) continue;
 
-            const rect = cardEl.getBoundingClientRect();
+            const rect = cardWrapperEl.getBoundingClientRect(); // Use wrapper for positioning
             const clientY = e.clientY;
 
-            // Define zones on the card: 35% top edge, 30% middle, 35% bottom edge
             const edgeRatio = 0.35; 
             const topEdgeZoneEnd = rect.top + rect.height * edgeRatio;
             const bottomEdgeZoneStart = rect.bottom - rect.height * edgeRatio;
 
-            if (clientY < rect.top && i === 0) { // Above the very first card
+            if (clientY < rect.top && i === 0) {
                  newCalculatedIndex = 0;
                  potentialMergeId = null;
                  break;
             }
             
-            // Dragging over top edge of a card -> placeholder for repositioning before this card
             if (clientY >= rect.top && clientY < topEdgeZoneEnd) {
                 newCalculatedIndex = i;
                 potentialMergeId = null;
                 break;
-            // Dragging over middle of a card -> potential merge target
             } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) {
-                if (cardId !== draggedItem.id) { // Can't merge with itself
+                if (cardId !== draggedItem.id) { 
                     newCalculatedIndex = null; 
                     potentialMergeId = cardId;
-                } else { // Dragging over itself in the middle zone, treat as positioning
+                } else { 
                     potentialMergeId = null;
                     if (clientY < rect.top + rect.height / 2) {
                         newCalculatedIndex = i;
@@ -127,14 +127,12 @@ export default function BoardColumnClient({
                     }
                 }
                 break;
-            // Dragging over bottom edge of a card -> placeholder for repositioning after this card
             } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) {
                 newCalculatedIndex = i + 1;
                 potentialMergeId = null;
                 break;
             }
             
-            // If cursor is below the last card
             if (i === cardElements.length - 1 && clientY >= rect.bottom) {
                  newCalculatedIndex = cards.length;
                  potentialMergeId = null;
@@ -162,7 +160,7 @@ export default function BoardColumnClient({
     else if (placeholderIndex !== null) {
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, placeholderIndex, undefined);
     }
-    else { // Fallback if both mergeTargetId and placeholderIndex are null (should be rare)
+    else { 
         const listElement = e.currentTarget;
         const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
         let finalFallbackIndex = cards.length;
@@ -248,31 +246,34 @@ export default function BoardColumnClient({
         <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
           <div
             className={cn(
-              "space-y-6 px-1 pt-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative"
+              "px-1 pt-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative"
             )}
             onDragOver={handleListAreaDragOver}
             onDrop={handleListAreaDrop}
             onDragLeave={handleListAreaDragLeave}
           >
-            {cards.map((card, index) => (
-              <React.Fragment key={card.id}>
-                {placeholderIndex === index && !mergeTargetId && (
-                  <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
-                )}
-                <RetroCard
-                  card={card}
-                  columnId={columnId}
-                  onUpdate={onUpdateCard}
-                  onDelete={onDeleteCard}
-                  onUpvote={onUpvoteCard}
-                  currentUserId={currentUserId}
-                  onDragStartItem={handleDragStart}
-                  isMergeTarget={card.id === mergeTargetId && card.id !== draggedItem?.id}
-                  isBoardConfirmedValid={isBoardConfirmedValid}
-                  isDraggable={!isAddingCard}
-                />
-              </React.Fragment>
-            ))}
+            {cards.map((card, index) => {
+                const showPlaceholderAbove = placeholderIndex === index && !mergeTargetId;
+                return (
+                  <div key={card.id} className="mb-3"> {/* Added wrapper div with mb-3 */}
+                    {showPlaceholderAbove && (
+                      <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
+                    )}
+                    <RetroCard
+                      card={card}
+                      columnId={columnId}
+                      onUpdate={onUpdateCard}
+                      onDelete={onDeleteCard}
+                      onUpvote={onUpvoteCard}
+                      currentUserId={currentUserId}
+                      onDragStartItem={handleDragStart}
+                      isMergeTarget={card.id === mergeTargetId && card.id !== draggedItem?.id}
+                      isBoardConfirmedValid={isBoardConfirmedValid}
+                      isDraggable={!isAddingCard}
+                    />
+                  </div>
+                );
+            })}
             {(placeholderIndex !== null && placeholderIndex === cards.length && !mergeTargetId) && (
               <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
             )}
