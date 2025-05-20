@@ -54,15 +54,12 @@ export const useBoardStore = create<BoardState>()(
         },
         loadInitialUserAndBoards: async () => {
           set({ isUserLoading: true });
-          // User is loaded from persisted state by zustand/persist middleware
-          const userLoaded = get().user; 
+          const userLoaded = get().user;
           if (userLoaded) {
-             set({ isUserLoading: false }); // Mark user as loaded
+             set({ isUserLoading: false });
           } else {
-            // If no user in persisted state, still mark as not loading so UI can prompt for setup
             set({ isUserLoading: false });
           }
-          // Fetch boards after user state is confirmed
           await get().actions.fetchBoards();
         },
         fetchBoards: async () => {
@@ -76,7 +73,7 @@ export const useBoardStore = create<BoardState>()(
             set({ boards: boardsData, isBoardsLoading: false });
           } catch (error) {
             console.error("Error fetching boards:", error);
-            set({ isBoardsLoading: false, boards: [] }); // Set boards to empty on error
+            set({ isBoardsLoading: false, boards: [] });
           }
         },
         addBoard: async (title) => {
@@ -97,17 +94,14 @@ export const useBoardStore = create<BoardState>()(
                 const errorData = await response.json();
                 errorDetails = errorData.message || JSON.stringify(errorData.errors) || errorDetails;
               } catch (e) {
-                // If parsing JSON fails, use the original statusText or just the status
               }
               throw new Error(`Failed to add board. Status: ${response.status}. Details: ${errorDetails}`);
             }
             const newBoard: BoardData = await response.json();
-            // After successful creation, fetch all boards to update the list on home page
-            await get().actions.fetchBoards(); 
-            return newBoard; // Still return the newBoard for immediate use (e.g., navigation)
+            await get().actions.fetchBoards(); // Refresh board list to include the new one
+            return newBoard;
           } catch (error) {
             console.error("Error adding board:", error);
-            // Potentially use a toast to show error to user
             return null;
           }
         },
@@ -121,7 +115,6 @@ export const useBoardStore = create<BoardState>()(
                 boards: state.boards.map(b => b.id === updatedBoard.id ? updatedBoard : b),
               };
             } else {
-              // If board doesn't exist, add it (e.g. a new board created by this or another client)
               return {
                 boards: [updatedBoard, ...state.boards].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
               };
@@ -160,10 +153,9 @@ export const useBoardStore = create<BoardState>()(
               }
               throw new Error(`Failed to add card. Status: ${response.status}. Details: ${errorDetails}`);
             }
-            // API should have emitted an SSE
           } catch (error) {
             console.error("Error adding card:", error);
-            throw error; // Re-throw to be caught by calling component
+            throw error;
           }
         },
         updateCardContent: async (boardId, cardId, newContent) => {
@@ -182,13 +174,12 @@ export const useBoardStore = create<BoardState>()(
               }
               throw new Error(`Failed to update card. Status: ${response.status}. Details: ${errorDetails}`);
             }
-            // API emits SSE
           } catch (error) {
             console.error("Error updating card content:", error);
-            throw error; // Re-throw
+            throw error;
           }
         },
-        deleteCard: async (boardId, columnId, cardId) => { 
+        deleteCard: async (boardId, columnId, cardId) => {
           try {
             const response = await fetch(`/api/boards/${boardId}/cards/${cardId}`, {
               method: 'DELETE',
@@ -202,13 +193,12 @@ export const useBoardStore = create<BoardState>()(
               }
               throw new Error(`Failed to delete card. Status: ${response.status}. Details: ${errorDetails}`);
             }
-            // API emits SSE
           } catch (error) {
             console.error("Error deleting card:", error);
-            throw error; // Re-throw
+            throw error;
           }
         },
-        upvoteCard: async (boardId, cardId, userIdToUpvote) => { 
+        upvoteCard: async (boardId, cardId, userIdToUpvote) => {
           const user = get().user;
           if (!user) {
             console.error("User not set, cannot upvote card");
@@ -218,7 +208,7 @@ export const useBoardStore = create<BoardState>()(
             const response = await fetch(`/api/boards/${boardId}/cards/${cardId}/upvote`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: user.id }), 
+              body: JSON.stringify({ userId: user.id }),
             });
             if (!response.ok) {
               let errorDetails = response.statusText;
@@ -229,10 +219,9 @@ export const useBoardStore = create<BoardState>()(
               }
               throw new Error(`Failed to upvote card. Status: ${response.status}. Details: ${errorDetails}`);
             }
-            // API emits SSE
           } catch (error) {
             console.error("Error upvoting card:", error);
-            throw error; // Re-throw
+            throw error;
           }
         },
         moveCard: async (boardId, draggedCardId, sourceColumnId, destColumnId, destinationIndex, mergeTargetCardId) => {
@@ -251,16 +240,15 @@ export const useBoardStore = create<BoardState>()(
             if (!response.ok) {
               let errorDetails = response.statusText;
               try {
-                const errorData = await response.json(); 
+                const errorData = await response.json();
                 errorDetails = errorData.message || JSON.stringify(errorData.errors) || errorDetails;
               } catch (e) {
               }
               throw new Error(`Failed to move card. Status: ${response.status}. Details: ${errorDetails}`);
             }
-            // API emits SSE
           } catch (error) {
             console.error("Error moving card:", error);
-            throw error; // Re-throw
+            throw error;
           }
         },
       },
@@ -268,15 +256,14 @@ export const useBoardStore = create<BoardState>()(
     {
       name: 'retrospective-app-storage',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ user: state.user, currentBoardId: state.currentBoardId }), 
+      partialize: (state) => ({ user: state.user, currentBoardId: state.currentBoardId }),
       onRehydrateStorage: () => {
         return (state, error) => {
           if (error) {
             console.error('Failed to rehydrate state from localStorage:', error)
           }
           if (state) {
-            state.isUserLoading = false; 
-            // loadInitialUserAndBoards will be called from UserProvider to fetch actual board data
+            state.isUserLoading = false;
           } else {
             set({ isUserLoading: false, user: null });
           }
