@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -12,14 +13,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { BoardData } from '@/lib/types';
-import { INITIAL_COLUMNS_DATA } from '@/lib/types';
-import { v4 as uuidv4 } from 'uuid';
+// import type { BoardData } from '@/lib/types'; // Not needed directly
+// import { INITIAL_COLUMNS_DATA } from '@/lib/types'; // Not needed directly
+// import { v4 as uuidv4 } from 'uuid'; // Not needed directly
 
 interface CreateBoardDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onBoardCreated: (newBoard: BoardData) => void;
+  onBoardCreated: (title: string) => void; // Changed to pass only title
 }
 
 export default function CreateBoardDialog({ isOpen, onClose, onBoardCreated }: CreateBoardDialogProps) {
@@ -33,20 +34,23 @@ export default function CreateBoardDialog({ isOpen, onClose, onBoardCreated }: C
       return;
     }
     setError('');
-    const newBoard: BoardData = {
-      id: uuidv4(),
-      title: title.trim(),
-      columns: JSON.parse(JSON.stringify(INITIAL_COLUMNS_DATA)), // Deep copy
-      cards: {},
-      createdAt: new Date().toISOString(),
-    };
-    onBoardCreated(newBoard);
+    onBoardCreated(title.trim());
     setTitle(''); 
     onClose();
   };
 
+  // Reset title when dialog is opened/closed to ensure fresh state
+  React.useEffect(() => {
+    if (!isOpen) {
+      setTitle('');
+      setError('');
+    }
+  }, [isOpen]);
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) onClose();
+    }}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Create New Board</DialogTitle>

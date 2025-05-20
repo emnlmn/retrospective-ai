@@ -1,6 +1,11 @@
 
 "use client";
 
+// This hook might still be useful for very simple, non-Zustand related local storage needs.
+// However, for the main application state (boards, user), Zustand's `persist` middleware is now used.
+// Keeping this file in case it's needed for other isolated local storage uses.
+// If not, it can be deleted.
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 function tryParse<T>(value: string | null, fallback: T): T {
@@ -28,14 +33,13 @@ export function useLocalStorage<T>(key: string, initialValue: T | (() => T)): [T
         setStoredValue(valueToStore);
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(key, JSON.stringify(valueToStore));
-          // Dispatch a storage event so other tabs can sync
           window.dispatchEvent(new StorageEvent('storage', { key, newValue: JSON.stringify(valueToStore) }));
         }
       } catch (error) {
         console.error(`Error setting localStorage key "${key}":`, error);
       }
     },
-    [key, storedValue] // storedValue is needed here because `value` can be a function of storedValue
+    [key, storedValue] 
   );
   
   const prevKeyRef = useRef<string>();
@@ -44,23 +48,18 @@ export function useLocalStorage<T>(key: string, initialValue: T | (() => T)): [T
     const resolvedInitialValue = typeof initialValue === 'function' ? (initialValue as () => T)() : initialValue;
 
     if (typeof window !== 'undefined') {
-      // Only re-read from localStorage and call setStoredValue if the key has actually changed.
-      // This prevents loops if `initialValue` is an unstable function reference but `key` is stable.
-      // The `useState` initializer handles the very first load.
       if (prevKeyRef.current !== key) {
         const item = window.localStorage.getItem(key);
         setStoredValue(tryParse<T>(item, resolvedInitialValue));
       }
-      prevKeyRef.current = key; // Update the ref for the next render
+      prevKeyRef.current = key; 
 
       const handleStorageChange = (event: StorageEvent) => {
         if (event.key === key) {
-           // Re-resolve initialValue at the time of event in case it changed
           const eventResolvedInitialValue = typeof initialValue === 'function' ? (initialValue as () => T)() : initialValue;
           if (event.newValue !== null) {
             setStoredValue(tryParse<T>(event.newValue, eventResolvedInitialValue));
           } else {
-            // Item was removed from localStorage in another tab
             setStoredValue(eventResolvedInitialValue);
           }
         }
@@ -72,12 +71,9 @@ export function useLocalStorage<T>(key: string, initialValue: T | (() => T)): [T
         window.removeEventListener('storage', handleStorageChange);
       };
     }
-    // This return is for the case where window is undefined (SSR cleanup)
     return () => {};
-  }, [key, initialValue, setStoredValue]); // setStoredValue is stable. initialValue is kept for fallback logic in handleStorageChange and resolvedInitialValue.
-                                        // The guard `if (prevKeyRef.current !== key)` protects the setStoredValue call.
-
+  }, [key, initialValue]); // Removed setStoredValue from deps as it's stable from useCallback.
+                                        
 
   return [storedValue, setValue];
 }
-

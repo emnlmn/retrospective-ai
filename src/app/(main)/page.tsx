@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -6,18 +7,26 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { PlusCircle, ArrowRight } from 'lucide-react';
 import type { BoardData } from '@/lib/types';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
 import CreateBoardDialog from '@/components/board/CreateBoardDialog';
 import { format } from 'date-fns';
+import { useBoardStore, useBoardActions } from '@/store/boardStore';
 
 export default function HomePage() {
-  const [boards, setBoards] = useLocalStorage<BoardData[]>('retrospective-boards', []);
+  const boards = useBoardStore((state) => state.boards);
+  const { addBoard } = useBoardActions();
   const [isCreateBoardDialogOpen, setIsCreateBoardDialogOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true); 
   }, []);
+
+  const handleBoardCreated = (title: string) => {
+    const newBoard = addBoard(title);
+    // Optionally, navigate to the new board or simply close the dialog
+    // For now, just closes the dialog, board list will update automatically
+    setIsCreateBoardDialogOpen(false);
+  };
 
   if (!mounted) {
     // Basic skeleton loader to avoid flash of "No Boards Yet" and layout shift
@@ -74,7 +83,7 @@ export default function HomePage() {
               </CardHeader>
               <CardContent className="flex-grow">
                 <p className="text-sm text-muted-foreground">
-                  {Object.values(board.cards).length} card{Object.values(board.cards).length !== 1 ? 's' : ''} across 3 columns.
+                  {Object.values(board.cards || {}).length} card{Object.values(board.cards || {}).length !== 1 ? 's' : ''} across 3 columns.
                 </p>
               </CardContent>
               <CardFooter>
@@ -92,10 +101,7 @@ export default function HomePage() {
       <CreateBoardDialog
         isOpen={isCreateBoardDialogOpen}
         onClose={() => setIsCreateBoardDialogOpen(false)}
-        onBoardCreated={(newBoard) => {
-          setBoards((prevBoards) => [newBoard, ...prevBoards]);
-          setIsCreateBoardDialogOpen(false);
-        }}
+        onBoardCreated={handleBoardCreated}
       />
     </div>
   );

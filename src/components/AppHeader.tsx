@@ -1,11 +1,12 @@
+
 "use client";
 
-import { useUser } from '@/contexts/UserProvider';
+import { useBoardStore } from '@/store/boardStore';
 import { UserCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AppHeader() {
-  const { user } = useUser();
+  const user = useBoardStore((state) => state.user);
 
   return (
     <header className="bg-card border-b border-border shadow-sm sticky top-0 z-50">

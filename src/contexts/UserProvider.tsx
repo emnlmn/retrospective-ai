@@ -1,77 +1,68 @@
+
 "use client";
 
 import type { User } from '@/lib/types';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useBoardStore } from '@/store/boardStore';
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { v4 as uuidv4 } from 'uuid'; // Needs npm install uuid @types/uuid
 import UserSetupDialog from '@/components/UserSetupDialog';
 
-interface UserContextType {
-  user: User | null;
-  setUserDetails: (name: string) => void;
-  isLoading: boolean;
+// This context is now primarily for managing the UserSetupDialog visibility
+interface UserDialogContextType {
+  showUserSetupDialog: boolean;
+  setShowUserSetupDialog: (show: boolean) => void;
+  handleUserSubmit: (name: string) => void;
 }
 
-const UserContext = createContext<UserContextType | undefined>(undefined);
+const UserDialogContext = createContext<UserDialogContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [user, setUserInStorage] = useLocalStorage<User | null>('retrospective-user', null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showDialog, setShowDialog] = useState(false);
+  const { user, isUserLoading, actions } = useBoardStore();
+  const [showUserSetupDialog, setShowUserSetupDialog] = useState(false);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('retrospective-user');
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        if(parsedUser && parsedUser.id && parsedUser.name) {
-           // Directly use this if valid to avoid hook delay if not needed
-        } else {
-          setShowDialog(true);
-        }
-      } catch (e) {
-        setShowDialog(true); // Corrupted data
-      }
-    } else {
-      setShowDialog(true);
-    }
-    setIsLoading(false);
-  }, []);
-  
+    actions.loadInitialUser();
+  }, [actions]);
+
   useEffect(() => {
-    // Sync local state with localStorage state, needed if useLocalStorage updates from another tab
-    if (!isLoading && !user) {
-      setShowDialog(true);
+    if (!isUserLoading && !user) {
+      setShowUserSetupDialog(true);
     } else if (user) {
-      setShowDialog(false);
+      setShowUserSetupDialog(false);
     }
-  }, [user, isLoading]);
+  }, [user, isUserLoading]);
 
-
-  const setUserDetails = (name: string) => {
-    const newUser: User = { id: user?.id || uuidv4(), name };
-    setUserInStorage(newUser);
-    setShowDialog(false);
+  const handleUserSubmit = (name: string) => {
+    actions.setUser(name);
+    setShowUserSetupDialog(false);
   };
-  
-  if (isLoading) {
+
+  if (isUserLoading) {
     return <div className="flex items-center justify-center h-screen"><p>Loading user...</p></div>;
   }
+  
+  // If user is loaded but null, and dialog isn't forced open yet, it will be by the effect above.
+  // This ensures children are only rendered if user exists or dialog is about to handle it.
 
   return (
-    <UserContext.Provider value={{ user, setUserDetails, isLoading }}>
-      {showDialog && <UserSetupDialog onSubmit={setUserDetails} />}
-      {!showDialog && user && children}
-      {/* Fallback if somehow dialog isn't shown but user is null */}
-      {!showDialog && !user && <div className="flex items-center justify-center h-screen"><p>Please set up your user profile.</p></div>}
-    </UserContext.Provider>
+    <UserDialogContext.Provider value={{ showUserSetupDialog, setShowUserSetupDialog, handleUserSubmit }}>
+      {showUserSetupDialog && <UserSetupDialog onSubmit={handleUserSubmit} />}
+      {!showUserSetupDialog && user && children}
+      {/* Fallback if user is null and dialog isn't shown (should be rare after initial load) */}
+      {!isUserLoading && !user && !showUserSetupDialog && (
+          <div className="flex items-center justify-center h-screen"><p>Please set up your user profile.</p></div>
+      )}
+    </UserDialogContext.Provider>
   );
 }
 
-export function useUser() {
-  const context = useContext(UserContext);
+// This hook is now specific for dialog control if needed elsewhere, user data comes from useBoardStore
+export function useUserDialog() {
+  const context = useContext(UserDialogContext);
   if (context === undefined) {
-    throw new Error('useUser must be used within a UserProvider');
+    throw new Error('useUserDialog must be used within a UserProvider');
   }
   return context;
 }
+
+// For accessing user data, components should directly use useBoardStore:
+// const { user } = useBoardStore();
