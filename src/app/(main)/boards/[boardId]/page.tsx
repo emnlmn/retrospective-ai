@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'next';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { BoardData, CardData, ColumnData, ColumnId } from '@/lib/types';
 import { DEFAULT_COLUMNS_CONFIG, INITIAL_COLUMNS_DATA } from '@/lib/types';
@@ -61,7 +61,7 @@ export default function BoardPage() {
           storeActions.setBoardFromServer(updatedBoardFromServer);
         } else if (updatedBoardFromServer === null) {
           // Board was deleted or not found on server
-          toast({ title: "Board Unavailable", description: "This board may have been deleted or is no longer accessible.", variant: "destructive" });
+          toast({ title: "Board Unavailable", description: "This board may have been deleted or is no longer accessible. Redirecting to home...", variant: "destructive" });
           storeActions.removeBoardFromServer(boardId);
           router.push('/'); // Redirect to home
         }
@@ -88,41 +88,50 @@ export default function BoardPage() {
   const currentBoard = useMemo(() => {
     if (!currentBoardFromStore) return null;
 
+    // Create a shallow copy for modification, then deep copy relevant parts
     const board = { ...currentBoardFromStore }; 
-    board.cards = board.cards ? { ...board.cards } : {}; 
+    board.cards = board.cards ? { ...board.cards } : {}; // Ensure cards is an object, shallow copy
 
+    // Ensure columns structure is correct and cardIds are arrays
     const sanitizedColumns: BoardData['columns'] = {
         wentWell: {
             ...(currentBoardFromStore.columns?.wentWell || INITIAL_COLUMNS_DATA.wentWell),
             cardIds: Array.isArray(currentBoardFromStore.columns?.wentWell?.cardIds)
-                ? [...currentBoardFromStore.columns.wentWell.cardIds] 
+                ? [...currentBoardFromStore.columns.wentWell.cardIds] // Deep copy cardIds
                 : [],
         },
         toImprove: {
             ...(currentBoardFromStore.columns?.toImprove || INITIAL_COLUMNS_DATA.toImprove),
             cardIds: Array.isArray(currentBoardFromStore.columns?.toImprove?.cardIds)
-                ? [...currentBoardFromStore.columns.toImprove.cardIds]
+                ? [...currentBoardFromStore.columns.toImprove.cardIds] // Deep copy cardIds
                 : [],
         },
         actionItems: {
             ...(currentBoardFromStore.columns?.actionItems || INITIAL_COLUMNS_DATA.actionItems),
             cardIds: Array.isArray(currentBoardFromStore.columns?.actionItems?.cardIds)
-                ? [...currentBoardFromStore.columns.actionItems.cardIds]
+                ? [...currentBoardFromStore.columns.actionItems.cardIds] // Deep copy cardIds
                 : [],
         },
     };
     
+    // Ensure titles are set from default config
     (Object.keys(sanitizedColumns) as ColumnId[]).forEach(colId => {
         sanitizedColumns[colId].title = DEFAULT_COLUMNS_CONFIG[colId].title;
     });
     board.columns = sanitizedColumns;
     
+    // Ensure card orders are consistent and cards in columns actually exist in board.cards
     (Object.keys(board.columns) as ColumnId[]).forEach(colId => {
         const column = board.columns[colId];
+        // Filter out cardIds that don't exist in board.cards
         column.cardIds = column.cardIds.filter(cardId => board.cards[cardId] !== undefined);
+        // Ensure all cards in the column have their order property set correctly
         column.cardIds.forEach((cardId, index) => {
-            if (board.cards[cardId]) {
-                board.cards[cardId] = { ...board.cards[cardId], order: index };
+            if (board.cards[cardId]) { // Double check card exists
+                // Create a new card object if order needs updating to ensure immutability
+                if (board.cards[cardId].order !== index) {
+                    board.cards[cardId] = { ...board.cards[cardId], order: index };
+                }
             }
         });
     });
@@ -141,7 +150,8 @@ export default function BoardPage() {
         // SSE will update the state
     } catch (error) {
         console.error("Error in handleAddCard:", error);
-        toast({ title: "Failed to Add Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while adding the card.";
+        toast({ title: "Failed to Add Card", description: errorMessage, variant: "destructive" });
     }
   }, [currentBoard, user, storeActions, toast]);
 
@@ -151,7 +161,8 @@ export default function BoardPage() {
         await storeActions.updateCardContent(currentBoard.id, cardId, newContent);
     } catch (error) {
         console.error("Error in handleUpdateCard:", error);
-        toast({ title: "Failed to Update Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while updating the card.";
+        toast({ title: "Failed to Update Card", description: errorMessage, variant: "destructive" });
     }
   }, [currentBoard, storeActions, toast]);
 
@@ -161,7 +172,8 @@ export default function BoardPage() {
         await storeActions.deleteCard(currentBoard.id, columnId, cardId);
     } catch (error) {
         console.error("Error in handleDeleteCard:", error);
-        toast({ title: "Failed to Delete Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while deleting the card.";
+        toast({ title: "Failed to Delete Card", description: errorMessage, variant: "destructive" });
     }
   }, [currentBoard, storeActions, toast]);
 
@@ -171,7 +183,8 @@ export default function BoardPage() {
         await storeActions.upvoteCard(currentBoard.id, cardId, user.id);
     } catch (error) {
         console.error("Error in handleUpvoteCard:", error);
-        toast({ title: "Failed to Upvote Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while upvoting the card.";
+        toast({ title: "Failed to Upvote Card", description: errorMessage, variant: "destructive" });
     }
   }, [currentBoard, user, storeActions, toast]);
 
@@ -206,7 +219,8 @@ export default function BoardPage() {
         );
     } catch (error) {
         console.error("Error in handleDragEnd:", error);
-        toast({ title: "Failed to Move Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while moving the card.";
+        toast({ title: "Failed to Move Card", description: errorMessage, variant: "destructive" });
     } finally {
         setDraggedItem(null); 
     }
@@ -237,6 +251,7 @@ export default function BoardPage() {
       
       if (result.actionItems && result.actionItems.length > 0) {
         for (const itemContent of result.actionItems) {
+          // Adding card directly to store, assuming API handles this correctly and SSE updates
           await storeActions.addCard(currentBoard.id, 'actionItems', itemContent, ' (AI Suggested)');
         }
         toast({ title: "AI Suggestions Added", description: `${result.actionItems.length} action items added.` });
@@ -275,19 +290,27 @@ export default function BoardPage() {
   }
 
   if (!user) {
+    // This state should ideally be handled by UserProvider redirecting or showing UserSetupDialog
+    // But as a fallback:
     return <div className="text-center py-10">User not set up. Please wait or go to home page. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
   
+  // If store user is loaded, but currentBoard is not yet available (e.g. initial load from URL or boards still fetching)
   const isLoadingBoards = useBoardStore.getState().isBoardsLoading;
   if (isLoadingBoards && !currentBoard) { // If boards are loading AND we don't have this board yet
      return <div className="text-center py-10">Loading board data...</div>;
   }
   
+  // After user and boards loading attempts, if currentBoard is still not found
   if (!currentBoard) {
+      // SSE might have already redirected if board was truly deleted.
+      // This handles cases where boardId is invalid or board is not in the initial fetched list.
       return <div className="text-center py-10">Board not found or not yet loaded. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
   
+  // Further check for data integrity after board is found
   if (!currentBoard.columns || !currentBoard.cards) {
+    // This indicates a problem with the board data structure itself.
     return <div className="text-center py-10">Board data is incomplete. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
 
@@ -337,11 +360,14 @@ export default function BoardPage() {
           {columnIds.map(columnId => {
             const columnConfig = DEFAULT_COLUMNS_CONFIG[columnId];
             // Ensure columnData is always an object, even if currentBoard.columns[columnId] is initially undefined
+            // This fallback is critical, currentBoard.columns[columnId] might be undefined if data is malformed
             const columnData = currentBoard.columns![columnId] || { ...INITIAL_COLUMNS_DATA[columnId], cardIds: [] };
             const cardIdsForColumn = Array.isArray(columnData.cardIds) ? columnData.cardIds : [];
             
+            // Ensure currentBoard.cards is treated as an object, even if initially undefined from a bad state
+            const cardsRecord = currentBoard.cards || {};
             const cardsForColumn = cardIdsForColumn
-              .map(id => currentBoard.cards![id]) 
+              .map(id => cardsRecord[id]) 
               .filter((card): card is CardData => !!card && typeof card.order === 'number') 
               .sort((a, b) => (a.order as number) - (b.order as number));
             
@@ -358,7 +384,7 @@ export default function BoardPage() {
                 onDeleteCard={handleDeleteCard}
                 onUpvoteCard={handleUpvoteCard}
                 onDragEnd={handleDragEnd}
-                currentUserId={user?.id || ''}
+                currentUserId={user?.id || ''} // Should always be a user here based on checks above
                 draggedItem={draggedItem}
                 setDraggedItem={setDraggedItem}
               />
