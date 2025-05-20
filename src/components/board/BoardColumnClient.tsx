@@ -32,7 +32,7 @@ interface BoardColumnClientProps {
   currentUserId: string;
   draggedItem: DraggedItemType | null;
   setDraggedItem: (item: DraggedItemType | null) => void;
-  isBoardConfirmedValid: boolean; // Receive validity prop
+  isBoardConfirmedValid: boolean;
 }
 
 export default function BoardColumnClient({
@@ -47,7 +47,7 @@ export default function BoardColumnClient({
   currentUserId,
   draggedItem,
   setDraggedItem,
-  isBoardConfirmedValid, // Use this prop
+  isBoardConfirmedValid,
 }: BoardColumnClientProps) {
   const [newCardContent, setNewCardContent] = useState('');
   const [isAddingCard, setIsAddingCard] = useState(false);
@@ -55,7 +55,7 @@ export default function BoardColumnClient({
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
 
   const handleAddCardSubmit = useCallback(() => {
-    if (!isBoardConfirmedValid) return; // Check validity
+    if (!isBoardConfirmedValid) return;
     if (newCardContent.trim()) {
       onAddCard(columnId, newCardContent.trim());
       setNewCardContent('');
@@ -64,15 +64,17 @@ export default function BoardColumnClient({
   }, [newCardContent, onAddCard, columnId, isBoardConfirmedValid]);
 
   const handleDragStart = useCallback((card: CardData, srcColId: ColumnId) => {
-    if (!isBoardConfirmedValid) return; // Check validity
+    if (!isBoardConfirmedValid || isAddingCard) { // Prevent drag if adding card in this column or board not valid
+        return;
+    }
     setDraggedItem({ ...card, sourceColumnId: srcColId });
     setMergeTargetId(null);
     setPlaceholderIndex(null);
-  }, [setDraggedItem, isBoardConfirmedValid]);
+  }, [setDraggedItem, isBoardConfirmedValid, isAddingCard]);
 
   const handleListAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (!draggedItem || !isBoardConfirmedValid) { // Check validity
+    if (!draggedItem || !isBoardConfirmedValid || isAddingCard) {
         setPlaceholderIndex(null);
         setMergeTargetId(null);
         return;
@@ -81,10 +83,10 @@ export default function BoardColumnClient({
     const listElement = e.currentTarget;
     const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
 
-    let newCalculatedIndex: number | null = cards.length; 
+    let newCalculatedIndex: number | null = cards.length;
     let potentialMergeId: string | null = null;
 
-    if (cardElements.length === 0) { 
+    if (cardElements.length === 0) {
         newCalculatedIndex = 0;
     } else {
         for (let i = 0; i < cardElements.length; i++) {
@@ -95,26 +97,26 @@ export default function BoardColumnClient({
             const rect = cardEl.getBoundingClientRect();
             const clientY = e.clientY;
 
-            const edgeRatio = 0.35; 
+            const edgeRatio = 0.35;
             const topEdgeZoneEnd = rect.top + rect.height * edgeRatio;
             const bottomEdgeZoneStart = rect.bottom - rect.height * edgeRatio;
 
-            if (clientY < rect.top && i === 0) { 
+            if (clientY < rect.top && i === 0) {
                  newCalculatedIndex = 0;
                  potentialMergeId = null;
                  break;
             }
-            
-            if (clientY >= rect.top && clientY < topEdgeZoneEnd) { 
+
+            if (clientY >= rect.top && clientY < topEdgeZoneEnd) {
                 newCalculatedIndex = i;
                 potentialMergeId = null;
                 break;
-            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) { 
-                if (cardId !== draggedItem.id) { 
-                    newCalculatedIndex = null; 
-                    potentialMergeId = cardId; 
-                } else { 
-                    potentialMergeId = null; 
+            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) {
+                if (cardId !== draggedItem.id) {
+                    newCalculatedIndex = null;
+                    potentialMergeId = cardId;
+                } else {
+                    potentialMergeId = null;
                     if (clientY < rect.top + rect.height / 2) {
                         newCalculatedIndex = i;
                     } else {
@@ -122,14 +124,14 @@ export default function BoardColumnClient({
                     }
                 }
                 break;
-            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) { 
+            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) {
                 newCalculatedIndex = i + 1;
                 potentialMergeId = null;
                 break;
             }
-            
-            if (i === cardElements.length - 1 && clientY >= rect.bottom) { 
-                 newCalculatedIndex = cards.length; 
+
+            if (i === cardElements.length - 1 && clientY >= rect.bottom) {
+                 newCalculatedIndex = cards.length;
                  potentialMergeId = null;
             }
         }
@@ -137,15 +139,15 @@ export default function BoardColumnClient({
     setPlaceholderIndex(newCalculatedIndex);
     setMergeTargetId(potentialMergeId);
 
-  }, [draggedItem, cards, isBoardConfirmedValid]);
+  }, [draggedItem, cards, isBoardConfirmedValid, isAddingCard]);
 
 
   const handleListAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (!draggedItem || !isBoardConfirmedValid) { // Check validity
+    if (!draggedItem || !isBoardConfirmedValid || isAddingCard) {
       setPlaceholderIndex(null);
       setMergeTargetId(null);
-      if (draggedItem) setDraggedItem(null); // Clear dragged item if action is denied
+      if (draggedItem) setDraggedItem(null);
       return;
     }
 
@@ -158,17 +160,17 @@ export default function BoardColumnClient({
     else {
         const listElement = e.currentTarget;
         const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
-        let finalFallbackIndex = cards.length; 
+        let finalFallbackIndex = cards.length;
          if (cardElements.length > 0) {
             for (let i = 0; i < cardElements.length; i++) {
                 const cardEl = cardElements[i];
                 const rect = cardEl.getBoundingClientRect();
-                if (e.clientY < rect.top + rect.height / 2) { 
+                if (e.clientY < rect.top + rect.height / 2) {
                     finalFallbackIndex = i;
                     break;
                 }
             }
-        } else { 
+        } else {
             finalFallbackIndex = 0;
         }
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, finalFallbackIndex, undefined);
@@ -176,8 +178,8 @@ export default function BoardColumnClient({
 
     setPlaceholderIndex(null);
     setMergeTargetId(null);
-    setDraggedItem(null); 
-  }, [draggedItem, cards, columnId, onDragEnd, placeholderIndex, mergeTargetId, setDraggedItem, isBoardConfirmedValid]);
+    setDraggedItem(null);
+  }, [draggedItem, cards, columnId, onDragEnd, placeholderIndex, mergeTargetId, setDraggedItem, isBoardConfirmedValid, isAddingCard]);
 
   const handleListAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -196,18 +198,18 @@ export default function BoardColumnClient({
               size="icon"
               className="text-muted-foreground hover:text-accent-foreground hover:bg-accent"
               onClick={() => {
-                if (!isBoardConfirmedValid) return; // Check validity
+                if (!isBoardConfirmedValid) return;
                 setIsAddingCard(true);
               }}
               aria-label="Add new card"
-              disabled={!isBoardConfirmedValid} // Disable if board not valid
+              disabled={!isBoardConfirmedValid || isAddingCard}
             >
               <PlusCircle className="h-5 w-5" />
             </Button>
         )}
       </div>
 
-      {isAddingCard && isBoardConfirmedValid && ( // Only show if board is valid
+      {isAddingCard && isBoardConfirmedValid && (
         <div className="mb-2 px-1">
           <ShadCard className="bg-card/80 shadow-md">
             <CardContent className="p-2">
@@ -241,7 +243,7 @@ export default function BoardColumnClient({
         <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
           <div
             className={cn(
-              "space-y-3 px-1 pt-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative"
+              "space-y-4 px-1 pt-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative"
             )}
             onDragOver={handleListAreaDragOver}
             onDrop={handleListAreaDrop}
@@ -249,7 +251,7 @@ export default function BoardColumnClient({
           >
             {cards.map((card, index) => (
               <React.Fragment key={card.id}>
-                {placeholderIndex === index && !mergeTargetId && ( 
+                {placeholderIndex === index && !mergeTargetId && (
                   <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
                 )}
                 <RetroCard
@@ -258,20 +260,21 @@ export default function BoardColumnClient({
                   onUpdate={onUpdateCard}
                   onDelete={onDeleteCard}
                   onUpvote={onUpvoteCard}
-                  currentUserId={currentUserId} 
+                  currentUserId={currentUserId}
                   onDragStartItem={handleDragStart}
                   isMergeTarget={card.id === mergeTargetId && card.id !== draggedItem?.id}
-                  isBoardConfirmedValid={isBoardConfirmedValid} // Pass down
+                  isBoardConfirmedValid={isBoardConfirmedValid}
+                  isDraggable={!isAddingCard} // Pass down if this column is in add mode
                 />
               </React.Fragment>
             ))}
-            {(placeholderIndex !== null && placeholderIndex === cards.length && !mergeTargetId) && ( 
+            {(placeholderIndex !== null && placeholderIndex === cards.length && !mergeTargetId) && (
               <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
             )}
             {cards.length === 0 && !isAddingCard && placeholderIndex === null && !mergeTargetId && (
               <p className="text-sm text-muted-foreground text-center pt-8">No cards yet.</p>
             )}
-            {cards.length === 0 && placeholderIndex === 0 && !mergeTargetId && ( 
+            {cards.length === 0 && placeholderIndex === 0 && !mergeTargetId && (
                 <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
             )}
           </div>
@@ -280,4 +283,3 @@ export default function BoardColumnClient({
     </div>
   );
 }
-
