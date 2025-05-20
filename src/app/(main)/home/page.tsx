@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -9,6 +10,24 @@ import type { BoardData } from '@/lib/types';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import CreateBoardDialog from '@/components/board/CreateBoardDialog';
 import { format } from 'date-fns';
+
+// Helper function to safely format dates
+const safeFormatDate = (dateString: string | undefined | null): string => {
+  if (!dateString) {
+    return "Unknown date";
+  }
+  try {
+    const date = new Date(dateString);
+    // Check if the date is valid
+    if (isNaN(date.getTime())) {
+      return "Invalid date";
+    }
+    return format(date, "MMMM d, yyyy 'at' h:mm a");
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return "Invalid date";
+  }
+};
 
 export default function HomePage() {
   const [boards, setBoards] = useLocalStorage<BoardData[]>('retrospective-boards', []);
@@ -63,17 +82,23 @@ export default function HomePage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {boards.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((board) => (
+          {boards.sort((a,b) => {
+            const dateA = new Date(a.createdAt || 0).getTime();
+            const dateB = new Date(b.createdAt || 0).getTime();
+            if (isNaN(dateA)) return 1; // push invalid dates to the end
+            if (isNaN(dateB)) return -1;
+            return dateB - dateA;
+          }).map((board) => (
             <Card key={board.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col bg-card border border-border">
               <CardHeader>
                 <CardTitle className="text-xl truncate font-semibold text-card-foreground">{board.title}</CardTitle>
                 <CardDescription className="text-xs text-muted-foreground">
-                  Created on {format(new Date(board.createdAt), "MMMM d, yyyy 'at' h:mm a")}
+                  Created on {safeFormatDate(board.createdAt)}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow">
                 <p className="text-sm text-muted-foreground">
-                  {Object.values(board.cards).length} card{Object.values(board.cards).length !== 1 ? 's' : ''} across 3 columns.
+                  {Object.values(board.cards || {}).length} card{Object.values(board.cards || {}).length !== 1 ? 's' : ''} across 3 columns.
                 </p>
               </CardContent>
               <CardFooter>
