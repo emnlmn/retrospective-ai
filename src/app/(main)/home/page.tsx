@@ -6,41 +6,27 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { PlusCircle, ArrowRight } from 'lucide-react';
-import type { BoardData } from '@/lib/types';
-import { INITIAL_COLUMNS_DATA } from '@/lib/types'; // Import INITIAL_COLUMNS_DATA
-import { v4 as uuidv4 } from 'uuid'; // Import uuid
-import { useLocalStorage } from '@/hooks/useLocalStorage';
 import CreateBoardDialog from '@/components/board/CreateBoardDialog';
 import { format } from 'date-fns';
-
-// Helper function to safely format dates
-const safeFormatDate = (dateString: string | undefined | null): string => {
-  if (!dateString) {
-    return "Unknown date";
-  }
-  try {
-    const date = new Date(dateString);
-    // Check if the date is valid
-    if (isNaN(date.getTime())) {
-      return "Invalid date";
-    }
-    return format(date, "MMMM d, yyyy 'at' h:mm a");
-  } catch (error) {
-    console.error("Error formatting date:", error);
-    return "Invalid date";
-  }
-};
+import { useBoardStore, useBoardActions } from '@/store/boardStore';
 
 export default function HomePage() {
-  const [boards, setBoards] = useLocalStorage<BoardData[]>('retrospective-boards', []);
+  const boards = useBoardStore((state) => state.boards);
+  const { addBoard } = useBoardActions();
   const [isCreateBoardDialogOpen, setIsCreateBoardDialogOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true); 
+    setMounted(true);
   }, []);
 
+  const handleBoardCreated = (title: string) => {
+    addBoard(title); // This will add to Zustand store and persist
+    setIsCreateBoardDialogOpen(false);
+  };
+
   if (!mounted) {
+    // Basic skeleton loader to avoid flash of "No Boards Yet" and layout shift
     return (
         <div className="space-y-8 animate-pulse">
             <div className="flex justify-between items-center">
@@ -61,9 +47,6 @@ export default function HomePage() {
     );
   }
 
-  // Filter boards to ensure they are valid objects with an ID before sorting and mapping
-  const validBoards = boards.filter(board => board && typeof board === 'object' && board.id);
-
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -73,7 +56,7 @@ export default function HomePage() {
         </Button>
       </div>
 
-      {validBoards.length === 0 ? (
+      {boards.length === 0 ? (
         <Card className="text-center py-10 shadow-lg bg-card border border-border">
           <CardHeader>
             <CardTitle className="text-2xl text-muted-foreground">No Boards Yet!</CardTitle>
@@ -87,19 +70,12 @@ export default function HomePage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {validBoards.sort((a,b) => {
-            // Ensure a and b are valid objects before accessing createdAt
-            const dateA = new Date(a?.createdAt || 0).getTime();
-            const dateB = new Date(b?.createdAt || 0).getTime();
-            if (isNaN(dateA)) return 1; // push invalid dates to the end
-            if (isNaN(dateB)) return -1;
-            return dateB - dateA;
-          }).map((board) => (
+          {boards.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((board) => (
             <Card key={board.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col bg-card border border-border">
               <CardHeader>
                 <CardTitle className="text-xl truncate font-semibold text-card-foreground">{board.title}</CardTitle>
                 <CardDescription className="text-xs text-muted-foreground">
-                  Created on {safeFormatDate(board.createdAt)}
+                  Created on {format(new Date(board.createdAt), "MMMM d, yyyy 'at' h:mm a")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow">
@@ -122,17 +98,7 @@ export default function HomePage() {
       <CreateBoardDialog
         isOpen={isCreateBoardDialogOpen}
         onClose={() => setIsCreateBoardDialogOpen(false)}
-        onBoardCreated={(title: string) => { 
-          const newBoard: BoardData = {     
-            id: uuidv4(),
-            title,
-            columns: JSON.parse(JSON.stringify(INITIAL_COLUMNS_DATA)),
-            cards: {},
-            createdAt: new Date().toISOString(),
-          };
-          setBoards((prevBoards) => [newBoard, ...prevBoards]);
-          setIsCreateBoardDialogOpen(false);
-        }}
+        onBoardCreated={handleBoardCreated}
       />
     </div>
   );
