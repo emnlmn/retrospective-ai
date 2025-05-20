@@ -49,9 +49,11 @@ export default function BoardPage() {
 
     console.log(`SSE: Initializing for board ${boardId}. Current boards in store: ${boards.length}`);
     const eventSource = new EventSource(`/api/boards/${boardId}/events`);
+    let sseConnected = true; // Assume connected initially
 
     eventSource.onopen = () => {
       console.log(`SSE: Connection opened for board ${boardId}`);
+      sseConnected = true;
     };
 
     eventSource.addEventListener('boardUpdate', (event) => {
@@ -64,7 +66,8 @@ export default function BoardPage() {
           storeActions.setBoardFromServer(updatedBoardFromServer);
         } else if (updatedBoardFromServer === null && boardId === params.boardId) {
           // Server explicitly says this current board is null (e.g., deleted by another user).
-          const boardStillInClientStore = boards.find(b => b.id === boardId);
+          // Check client store *after* potential update from another source or initial load.
+          const boardStillInClientStore = useBoardStore.getState().boards.find(b => b.id === boardId);
           
           if (boardStillInClientStore) {
             // Board was in client store, but server says it's gone.
@@ -74,14 +77,11 @@ export default function BoardPage() {
           } else {
             // Board was NOT in client store, and server says it's null.
             // This could be:
-            // 1. An invalid URL that will never resolve.
+            // 1. An invalid URL that will never resolve (page will show "Board not found or is being loaded...").
             // 2. A new board, and this is the *initial* null from the SSE endpoint before the creation event arrives.
             // In case 2, we should NOT redirect here. We wait for the subsequent creation event.
-            // The main page render logic will show "Board not found or is being loaded...".
-            // If it's a truly invalid URL (case 1), this message will persist, which is acceptable.
             console.warn(`SSE: Received null for board ${boardId}, but it wasn't in client store. Waiting for potential creation event or persisting 'not found' state.`);
             // No automatic redirect here. Let the UI show "Board not found or is being loaded..."
-            // If the board never arrives via a subsequent SSE, the user will remain on this state.
           }
         }
         // If updatedBoardFromServer is for a *different* board ID, Zustand's setBoardFromServer will handle it correctly if it's an update for another board.
@@ -93,9 +93,10 @@ export default function BoardPage() {
     
     eventSource.onerror = (error) => {
       console.error(`SSE: EventSource failed for board ${boardId}:`, error);
+      sseConnected = false;
       // Don't show toast for initial connection errors if page is already showing "loading" or "not found"
       // Only show if it was previously connected or if the board was thought to exist.
-      const currentBoardExists = boards.find(b => b.id === boardId);
+      const currentBoardExists = useBoardStore.getState().boards.find(b => b.id === boardId);
       if (currentBoardExists) { // Only toast if we thought the board was okay
         toast({ title: "Connection Issue", description: "Lost real-time connection to the board. Some changes may not appear automatically.", variant: "destructive" });
       }
@@ -103,10 +104,13 @@ export default function BoardPage() {
     };
 
     return () => {
-      console.log(`SSE: Closing connection for board ${boardId}`);
-      eventSource.close();
+      if (sseConnected) {
+        console.log(`SSE: Closing connection for board ${boardId}`);
+        eventSource.close();
+        sseConnected = false;
+      }
     };
-  }, [boardId, storeActions, router, toast, params.boardId, boards]);
+  }, [boardId, storeActions, router, toast, params.boardId]); // Removed `boards` from deps, using getState inside if needed
 
 
   const currentBoardFromStore = useMemo(() => boards.find(b => b.id === boardId), [boards, boardId]);
@@ -114,40 +118,49 @@ export default function BoardPage() {
   const currentBoard = useMemo(() => {
     if (!currentBoardFromStore) return null;
 
+    // Create a new object for the board to ensure immutability if modifications are made
     const board = { ...currentBoardFromStore }; 
+    // Ensure cards is a new object if it exists
     board.cards = board.cards ? { ...board.cards } : {};
 
+    // Deep clone and sanitize columns, ensuring all default columns are present
     const sanitizedColumns: BoardData['columns'] = {
         wentWell: {
-            ...(currentBoardFromStore.columns?.wentWell || INITIAL_COLUMNS_DATA.wentWell),
-            cardIds: Array.isArray(currentBoardFromStore.columns?.wentWell?.cardIds)
-                ? [...currentBoardFromStore.columns.wentWell.cardIds]
-                : [],
+            ...(currentBoardFromStore.columns?.wentWell || INITIAL_COLUMNS_DATA.wentWell), // Spread existing or default
+            id: 'wentWell', // Ensure ID
+            title: DEFAULT_COLUMNS_CONFIG.wentWell.title, // Ensure title
+            cardIds: Array.isArray(currentBoardFromStore.columns?.wentWell?.cardIds) // Ensure cardIds is an array
+                ? [...currentBoardFromStore.columns.wentWell.cardIds] // Clone if array
+                : [], // Default to empty array
         },
         toImprove: {
             ...(currentBoardFromStore.columns?.toImprove || INITIAL_COLUMNS_DATA.toImprove),
+            id: 'toImprove',
+            title: DEFAULT_COLUMNS_CONFIG.toImprove.title,
             cardIds: Array.isArray(currentBoardFromStore.columns?.toImprove?.cardIds)
                 ? [...currentBoardFromStore.columns.toImprove.cardIds]
                 : [],
         },
         actionItems: {
             ...(currentBoardFromStore.columns?.actionItems || INITIAL_COLUMNS_DATA.actionItems),
+            id: 'actionItems',
+            title: DEFAULT_COLUMNS_CONFIG.actionItems.title,
             cardIds: Array.isArray(currentBoardFromStore.columns?.actionItems?.cardIds)
                 ? [...currentBoardFromStore.columns.actionItems.cardIds]
                 : [],
         },
     };
-    
-    (Object.keys(sanitizedColumns) as ColumnId[]).forEach(colId => {
-        sanitizedColumns[colId].title = DEFAULT_COLUMNS_CONFIG[colId].title;
-    });
     board.columns = sanitizedColumns;
     
+    // Ensure card orders are consistent and cards exist
     (Object.keys(board.columns) as ColumnId[]).forEach(colId => {
         const column = board.columns[colId];
+        // Filter out card IDs that don't have corresponding card data
         column.cardIds = column.cardIds.filter(cardId => board.cards[cardId] !== undefined);
+        // Ensure order property for cards in this column
         column.cardIds.forEach((cardId, index) => {
-            if (board.cards[cardId]) { 
+            if (board.cards[cardId]) { // Check if card exists
+                // Create a new card object if order needs to be updated
                 if (board.cards[cardId].order !== index) {
                     board.cards[cardId] = { ...board.cards[cardId], order: index };
                 }
@@ -307,10 +320,12 @@ export default function BoardPage() {
   }
 
   if (!user) {
+    // This state should ideally be handled by UserProvider, redirecting or showing UserSetupDialog
+    // But as a fallback:
     return <div className="text-center py-10">User not set up. Redirecting to home... <Link href="/"><Button variant="link">Go Home Now</Button></Link></div>;
   }
   
-  // If Zustand is still loading all boards AND we don't have this specific board yet
+  // If Zustand is still loading all boards AND we don't have this specific board yet from the store
   if (isLoadingAllBoards && !currentBoardFromStore) {
      return <div className="text-center py-10">Loading board data...</div>;
   }
@@ -326,7 +341,9 @@ export default function BoardPage() {
       );
   }
   
+  // This check is important after currentBoard is derived
   if (!currentBoard.columns || !currentBoard.cards) {
+    // This can happen if the board structure from store is incomplete even after sanitization
     return <div className="text-center py-10">Board data is incomplete. Trying to sync... <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
 
@@ -375,15 +392,19 @@ export default function BoardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-1 min-w-[1200px] md:min-w-full px-1">
           {columnIds.map(columnId => {
             const columnConfig = DEFAULT_COLUMNS_CONFIG[columnId];
+            // Ensure columnData is always defined using the sanitized currentBoard.columns
             const columnData = currentBoard.columns![columnId] || { ...INITIAL_COLUMNS_DATA[columnId], cardIds: [] };
             const cardIdsForColumn = Array.isArray(columnData.cardIds) ? columnData.cardIds : [];
+            
+            // Ensure cardsRecord is always defined from sanitized currentBoard.cards
             const cardsRecord = currentBoard.cards || {};
+            
             const cardsForColumn = cardIdsForColumn
               .map(id => cardsRecord[id]) 
-              .filter((card): card is CardData => !!card && typeof card.order === 'number') 
-              .sort((a, b) => (a.order as number) - (b.order as number));
+              .filter((card): card is CardData => !!card && typeof card.order === 'number') // Ensure card exists and order is a number
+              .sort((a, b) => (a.order as number) - (b.order as number)); // Explicitly cast order
             
-            if (!columnConfig) return null;
+            if (!columnConfig) return null; // Should not happen with DEFAULT_COLUMNS_CONFIG
 
             return (
               <BoardColumnClient
@@ -408,3 +429,4 @@ export default function BoardPage() {
     </div>
   );
 }
+

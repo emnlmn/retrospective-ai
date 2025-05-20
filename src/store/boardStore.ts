@@ -102,10 +102,8 @@ export const useBoardStore = create<BoardState>()(
               throw new Error(`Failed to add board. Status: ${response.status}. Details: ${errorDetails}`);
             }
             const newBoard: BoardData = await response.json();
-            // REMOVED OPTIMISTIC UPDATE: Rely on SSE to deliver this update
-            // set((state) => ({ boards: [newBoard, ...state.boards] })); 
-            // A full fetchBoards() could also be an option if SSE is not used for self-updates for create.
-            // For now, we expect SSE to handle the addition of newBoard to the list for all clients.
+            // After successful creation, fetch all boards to update the list on home page
+            await get().actions.fetchBoards(); 
             return newBoard; // Still return the newBoard for immediate use (e.g., navigation)
           } catch (error) {
             console.error("Error adding board:", error);
