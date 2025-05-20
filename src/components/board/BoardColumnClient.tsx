@@ -33,6 +33,8 @@ interface BoardColumnClientProps {
   draggedItem: DraggedItemType | null;
   setDraggedItem: (item: DraggedItemType | null) => void;
   isBoardConfirmedValid: boolean;
+  editingCardId: string | null;
+  setEditingCardId: (id: string | null) => void;
 }
 
 export default function BoardColumnClient({
@@ -48,6 +50,8 @@ export default function BoardColumnClient({
   draggedItem,
   setDraggedItem,
   isBoardConfirmedValid,
+  editingCardId,
+  setEditingCardId,
 }: BoardColumnClientProps) {
   const [newCardContent, setNewCardContent] = useState('');
   const [isAddingCard, setIsAddingCard] = useState(false);
@@ -64,13 +68,13 @@ export default function BoardColumnClient({
   }, [newCardContent, onAddCard, columnId, isBoardConfirmedValid]);
 
   const handleDragStart = useCallback((card: CardData, srcColId: ColumnId) => {
-    if (!isBoardConfirmedValid || isAddingCard) { 
+    if (!isBoardConfirmedValid || isAddingCard || editingCardId === card.id) { 
         return;
     }
     setDraggedItem({ ...card, sourceColumnId: srcColId });
     setMergeTargetId(null);
     setPlaceholderIndex(null);
-  }, [setDraggedItem, isBoardConfirmedValid, isAddingCard]);
+  }, [setDraggedItem, isBoardConfirmedValid, isAddingCard, editingCardId]);
 
   const handleListAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -83,7 +87,6 @@ export default function BoardColumnClient({
     const listElement = e.currentTarget;
     const cardElements = Array.from(listElement.children).filter(child => child.querySelector('[data-card-id]') !== null) as HTMLElement[];
 
-
     let newCalculatedIndex: number | null = cards.length;
     let potentialMergeId: string | null = null;
 
@@ -91,13 +94,13 @@ export default function BoardColumnClient({
         newCalculatedIndex = 0;
     } else {
         for (let i = 0; i < cardElements.length; i++) {
-            const cardWrapperEl = cardElements[i]; // This is the div wrapper for the card
+            const cardWrapperEl = cardElements[i]; 
             const cardEl = cardWrapperEl.querySelector<HTMLElement>('[data-card-id]');
             if (!cardEl) continue;
             const cardId = cardEl.dataset.cardId;
             if (!cardId) continue;
 
-            const rect = cardWrapperEl.getBoundingClientRect(); // Use wrapper for positioning
+            const rect = cardWrapperEl.getBoundingClientRect(); 
             const clientY = e.clientY;
 
             const edgeRatio = 0.35; 
@@ -115,7 +118,7 @@ export default function BoardColumnClient({
                 potentialMergeId = null;
                 break;
             } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) {
-                if (cardId !== draggedItem.id) { 
+                if (cardId !== draggedItem.id && editingCardId !== cardId) { // Cannot merge with a card being edited
                     newCalculatedIndex = null; 
                     potentialMergeId = cardId;
                 } else { 
@@ -142,7 +145,7 @@ export default function BoardColumnClient({
     setPlaceholderIndex(newCalculatedIndex);
     setMergeTargetId(potentialMergeId);
 
-  }, [draggedItem, cards, isBoardConfirmedValid, isAddingCard]);
+  }, [draggedItem, cards, isBoardConfirmedValid, isAddingCard, editingCardId]);
 
 
   const handleListAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -201,7 +204,7 @@ export default function BoardColumnClient({
               size="icon"
               className="text-muted-foreground hover:text-accent-foreground hover:bg-accent"
               onClick={() => {
-                if (!isBoardConfirmedValid) return;
+                if (!isBoardConfirmedValid || isAddingCard) return;
                 setIsAddingCard(true);
               }}
               aria-label="Add new card"
@@ -255,7 +258,7 @@ export default function BoardColumnClient({
             {cards.map((card, index) => {
                 const showPlaceholderAbove = placeholderIndex === index && !mergeTargetId;
                 return (
-                  <div key={card.id} className="mb-3"> {/* Added wrapper div with mb-3 */}
+                  <div key={card.id} className="mb-3"> 
                     {showPlaceholderAbove && (
                       <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
                     )}
@@ -267,9 +270,11 @@ export default function BoardColumnClient({
                       onUpvote={onUpvoteCard}
                       currentUserId={currentUserId}
                       onDragStartItem={handleDragStart}
-                      isMergeTarget={card.id === mergeTargetId && card.id !== draggedItem?.id}
+                      isMergeTarget={card.id === mergeTargetId && card.id !== draggedItem?.id && editingCardId !== card.id}
                       isBoardConfirmedValid={isBoardConfirmedValid}
-                      isDraggable={!isAddingCard}
+                      isDraggable={!isAddingCard && editingCardId !== card.id}
+                      editingCardId={editingCardId}
+                      setEditingCardId={setEditingCardId}
                     />
                   </div>
                 );
@@ -289,4 +294,3 @@ export default function BoardColumnClient({
     </div>
   );
 }
-

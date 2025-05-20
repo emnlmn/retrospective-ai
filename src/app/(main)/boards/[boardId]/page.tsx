@@ -36,57 +36,43 @@ export default function BoardPage() {
   const [isAISuggesting, setIsAISuggesting] = useState(false);
   const [draggedItem, setDraggedItem] = useState<DraggedItemType | null>(null);
   const [isBoardConfirmedValid, setIsBoardConfirmedValid] = useState(false);
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
 
   useEffect(() => {
     if (boardId) {
       storeActions.setCurrentBoardId(boardId);
-      setIsBoardConfirmedValid(false); // Always start as unconfirmed for a new/changed boardId
+      setIsBoardConfirmedValid(false); 
+      setEditingCardId(null); // Reset editing state when board changes
     }
   }, [boardId, storeActions]);
 
-  // SSE connection effect
   useEffect(() => {
     if (!boardId || typeof window === 'undefined') {
       return;
     }
-
-    // console.log(`SSE: Initializing for board ${boardId}.`);
+    
+    let sseConnected = false;
     const eventSource = new EventSource(`/api/boards/${boardId}/events`);
-    let sseConnected = true;
 
     eventSource.onopen = () => {
-      // console.log(`SSE: Connection opened for board ${boardId}`);
       sseConnected = true;
     };
 
     eventSource.addEventListener('boardUpdate', (event) => {
       try {
         const updatedBoardFromServer = JSON.parse(event.data as string) as BoardData | null;
-        // boardId here is from the useEffect closure, representing the ID this EventSource is for.
-
-        // console.log(`SSE: Event received. Listening for boardId: ${boardId}. Event for boardId: ${updatedBoardFromServer?.id}. Data:`, updatedBoardFromServer);
-
+        
         if (updatedBoardFromServer && updatedBoardFromServer.id === boardId) {
-          // console.log(`SSE: Valid board update for ${boardId}. Setting board and confirming validity.`);
           storeActions.setBoardFromServer(updatedBoardFromServer);
           setIsBoardConfirmedValid(true);
-        } else if (updatedBoardFromServer === null) {
-          // Server explicitly says the board (for this boardId stream) is null.
-          // console.log(`SSE: Received null for current board ${boardId}. Setting board as not valid.`);
+        } else if (updatedBoardFromServer === null && boardId === (params.boardId as string) ) { // Check if the null update is for the current board
           setIsBoardConfirmedValid(false);
-
           const boardStillInClientStore = useBoardStore.getState().boards.find(b => b.id === boardId);
           if (boardStillInClientStore) {
-            // console.log(`SSE: Board ${boardId} was in client store. Removing and redirecting.`);
             storeActions.removeBoardFromServer(boardId);
             toast({ title: "Board Unavailable", description: "This board was deleted or is no longer accessible. Redirecting to home...", variant: "destructive" });
             router.push('/');
-          } else {
-             // console.warn(`SSE: Received null for board ${boardId}, and it wasn't in client store. This is expected for invalid URLs or new boards awaiting their creation event.`);
-             // No action needed here, UI will show "Board not found..."
           }
-        } else {
-          // console.log(`SSE: Event ignored or for a different board. Listening for boardId: ${boardId}, Event for boardId: ${updatedBoardFromServer?.id}, Is null: ${updatedBoardFromServer === null}`);
         }
       } catch (error) {
         console.error('SSE: Failed to parse boardUpdate:', error);
@@ -98,7 +84,7 @@ export default function BoardPage() {
       console.error(`SSE: EventSource failed for board ${boardId}:`, error);
       if (sseConnected) {
         const currentBoardExistsInStore = useBoardStore.getState().boards.find(b => b.id === boardId);
-        if (currentBoardExistsInStore) { // Only toast if we thought this board was valid
+        if (currentBoardExistsInStore) { 
             toast({ title: "Connection Issue", description: "Lost real-time connection to the board. Some changes may not appear automatically.", variant: "destructive" });
         }
       }
@@ -107,35 +93,30 @@ export default function BoardPage() {
     };
 
     return () => {
-      if (sseConnected) { // Ensure we only close if it was considered connected
-        // console.log(`SSE: Closing connection for board ${boardId}`);
+      if (sseConnected) {
         eventSource.close();
         sseConnected = false;
       }
     };
-  }, [boardId, storeActions, router, toast]);
+  }, [boardId, storeActions, router, toast, params.boardId]);
 
 
   const currentBoardFromStore = useMemo(() => boards.find(b => b.id === boardId), [boards, boardId]);
 
   const currentBoard = useMemo(() => {
     if (!currentBoardFromStore) return null;
-    // Deep clone and sanitize
     const board = JSON.parse(JSON.stringify(currentBoardFromStore)) as BoardData;
-    board.cards = board.cards || {}; // Ensure cards object exists
+    board.cards = board.cards || {}; 
     const sanitizedColumns: BoardData['columns'] = {
         wentWell: { ...(board.columns?.wentWell || INITIAL_COLUMNS_DATA.wentWell), id: 'wentWell', title: DEFAULT_COLUMNS_CONFIG.wentWell.title, cardIds: Array.isArray(board.columns?.wentWell?.cardIds) ? [...board.columns.wentWell.cardIds] : [], },
         toImprove: { ...(board.columns?.toImprove || INITIAL_COLUMNS_DATA.toImprove), id: 'toImprove', title: DEFAULT_COLUMNS_CONFIG.toImprove.title, cardIds: Array.isArray(board.columns?.toImprove?.cardIds) ? [...board.columns.toImprove.cardIds] : [], },
         actionItems: { ...(board.columns?.actionItems || INITIAL_COLUMNS_DATA.actionItems), id: 'actionItems', title: DEFAULT_COLUMNS_CONFIG.actionItems.title, cardIds: Array.isArray(board.columns?.actionItems?.cardIds) ? [...board.columns.actionItems.cardIds] : [], },
     };
     board.columns = sanitizedColumns;
-    // Ensure cardIds in columns actually exist in board.cards and set order
     (Object.keys(board.columns) as ColumnId[]).forEach(colId => {
         const column = board.columns[colId];
         if (column && Array.isArray(column.cardIds)) {
-          // Filter out cardIds that don't have corresponding card data
           column.cardIds = column.cardIds.filter(cardId => board.cards && board.cards[cardId] !== undefined);
-          // Ensure order property is set for all cards in the column
           column.cardIds.forEach((cardId, index) => {
             if (board.cards && board.cards[cardId]) {
               board.cards[cardId].order = index;
@@ -149,7 +130,7 @@ export default function BoardPage() {
 
   const handleAddCard = useCallback(async (columnId: ColumnId, content: string) => {
     if (!isBoardConfirmedValid) { toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" }); return; }
-    const boardForAction = useBoardStore.getState().boards.find(b => b.id === boardId); // Re-fetch from store for current data
+    const boardForAction = useBoardStore.getState().boards.find(b => b.id === boardId); 
     if (!boardForAction || !user) { toast({ title: "Cannot Add Card", description: "Board or user data is missing, or board is not fully loaded.", variant: "destructive" }); return; }
     try { await storeActions.addCard(boardForAction.id, columnId, content); }
     catch (error) { console.error("Error in handleAddCard:", error); const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while adding the card."; toast({ title: "Failed to Add Card", description: errorMessage, variant: "destructive" }); }
@@ -159,17 +140,23 @@ export default function BoardPage() {
     if (!isBoardConfirmedValid) { toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" }); return; }
     const boardForAction = useBoardStore.getState().boards.find(b => b.id === boardId);
     if (!boardForAction) { toast({ title: "Cannot Update Card", description: "Board data is missing.", variant: "destructive" }); return; }
-    try { await storeActions.updateCardContent(boardForAction.id, cardId, newContent); }
+    try { 
+      await storeActions.updateCardContent(boardForAction.id, cardId, newContent); 
+      setEditingCardId(null); // Exit editing mode on successful update
+    }
     catch (error) { console.error("Error in handleUpdateCard:", error); const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while updating the card."; toast({ title: "Failed to Update Card", description: errorMessage, variant: "destructive" }); }
-  }, [boardId, storeActions, toast, isBoardConfirmedValid]);
+  }, [boardId, storeActions, toast, isBoardConfirmedValid, setEditingCardId]);
 
   const handleDeleteCard = useCallback(async (cardId: string, columnId: ColumnId) => {
     if (!isBoardConfirmedValid) { toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" }); return; }
     const boardForAction = useBoardStore.getState().boards.find(b => b.id === boardId);
     if (!boardForAction) { toast({ title: "Cannot Delete Card", description: "Board data is missing.", variant: "destructive" }); return; }
-    try { await storeActions.deleteCard(boardForAction.id, columnId, cardId); }
+    try { 
+      await storeActions.deleteCard(boardForAction.id, columnId, cardId); 
+      if (editingCardId === cardId) setEditingCardId(null); // If deleted card was being edited
+    }
     catch (error) { console.error("Error in handleDeleteCard:", error); const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while deleting the card."; toast({ title: "Failed to Delete Card", description: errorMessage, variant: "destructive" }); }
-  }, [boardId, storeActions, toast, isBoardConfirmedValid]);
+  }, [boardId, storeActions, toast, isBoardConfirmedValid, editingCardId, setEditingCardId]);
 
   const handleUpvoteCard = useCallback(async (cardId: string) => {
     if (!isBoardConfirmedValid) { toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" }); return; }
@@ -214,7 +201,6 @@ export default function BoardPage() {
   }, [toast]);
 
 
-  // --- Rendering Logic ---
   if (isStoreUserLoading) {
     return <div className="text-center py-10">Loading user data...</div>;
   }
@@ -222,33 +208,19 @@ export default function BoardPage() {
     return <div className="text-center py-10">User not set up. Please ensure user setup is complete. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
 
-  // currentBoard is derived from Zustand store (via currentBoardFromStore -> useMemo)
-  // isBoardConfirmedValid is local state, set by SSE events for THIS boardId
-
-  if (isBoardConfirmedValid && currentBoard) {
-    // Board is confirmed valid and data is present: Render the board
+  if (currentBoard && isBoardConfirmedValid) {
     if (!currentBoard.columns || !currentBoard.cards) {
-      // This state indicates data corruption or incomplete sanitization.
       return <div className="text-center py-10">Board data is incomplete. Trying to sync... <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
     }
-    // Proceed to render the board
   } else if (currentBoard && !isBoardConfirmedValid) {
-    // Board is in local store (e.g. from localStorage via Zustand),
-    // but not yet confirmed by server for this session via SSE.
     return (<div className="text-center py-10">Connecting to board and verifying...<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
-  } else if (!currentBoard && !isBoardConfirmedValid) {
-    // Board is not in local store, AND not confirmed by server.
-    // This means:
-    // 1. Invalid URL.
-    // 2. New board, awaiting its first SSE data event to populate the store.
-    // 3. Board was deleted, and SSE handler has already removed it from store and triggered redirect (this UI won't be shown long).
+  } else if (!currentBoard && !isBoardConfirmedValid && isLoadingAllBoards) { // Added isLoadingAllBoards check
+    return (<div className="text-center py-10">Loading boards list...<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
+  } else if (!currentBoard && !isBoardConfirmedValid && !isLoadingAllBoards) { // Added isLoadingAllBoards check
     return (<div className="text-center py-10">Board not found or is being loaded. If this persists, the board may not exist or access is denied.<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
   } else if (!currentBoard && isBoardConfirmedValid) {
-     // This state should ideally not happen: Server confirmed validity, but board is not in client store.
-     // Could be a race condition if SSE confirms validity *just as* another client action removes the board locally.
      return (<div className="text-center py-10">Board data is inconsistent. Trying to sync...<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
   } else {
-    // Fallback for any other unexpected combination of states.
      return (<div className="text-center py-10">Board data unavailable or in an unexpected state. <Link href="/"><Button variant="link">Go Home</Button></Link><Script id="redirect-home-fallback">{`setTimeout(() => { if (window.location.pathname !== '/') window.location.href = '/'; }, 100);`}</Script></div>);
   }
 
@@ -298,7 +270,6 @@ export default function BoardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-1 min-w-[1200px] md:min-w-full px-1">
           {columnIds.map(columnId => {
             const columnConfig = DEFAULT_COLUMNS_CONFIG[columnId];
-            // currentBoard is guaranteed to be non-null here by the rendering logic above
             const columnData = currentBoard!.columns![columnId] || { ...INITIAL_COLUMNS_DATA[columnId], id: columnId, title: columnConfig.title, cardIds: [] };
             const cardIdsForColumn = Array.isArray(columnData.cardIds) ? columnData.cardIds : [];
             const cardsRecord = currentBoard!.cards || {};
@@ -325,6 +296,8 @@ export default function BoardPage() {
                 draggedItem={draggedItem}
                 setDraggedItem={setDraggedItem}
                 isBoardConfirmedValid={isBoardConfirmedValid}
+                editingCardId={editingCardId}
+                setEditingCardId={setEditingCardId}
               />
             );
           })}

@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, memo, useCallback, useMemo } from 'react';
 import type { CardData, ColumnId } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,7 +26,7 @@ import {
   ContextMenuLabel,
 } from "@/components/ui/context-menu";
 import { useBoardStore } from '@/store/boardStore';
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 
 
 interface RetroCardProps {
@@ -39,6 +39,8 @@ interface RetroCardProps {
   isMergeTarget?: boolean;
   isBoardConfirmedValid: boolean;
   isDraggable: boolean;
+  editingCardId: string | null;
+  setEditingCardId: (id: string | null) => void;
 }
 
 const RetroCard = memo(function RetroCard({
@@ -51,46 +53,55 @@ const RetroCard = memo(function RetroCard({
     isMergeTarget = false,
     isBoardConfirmedValid,
     isDraggable,
+    editingCardId,
+    setEditingCardId,
 }: RetroCardProps) {
-  const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(card.content);
   const [isBeingDragged, setIsBeingDragged] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const currentUserId = useBoardStore(state => state.user?.id);
 
+  const isThisCardEditing = editingCardId === card.id;
+
   const canEditOrDelete = card.userId === currentUserId;
   const hasUpvoted = currentUserId ? card.upvotes.includes(currentUserId) : false;
 
   useEffect(() => {
-    if (card.content !== editedContent && !isEditing) {
+    if (card.content !== editedContent && !isThisCardEditing) {
         setEditedContent(card.content);
     }
-  }, [card.content, editedContent, isEditing]);
+  }, [card.content, editedContent, isThisCardEditing]);
 
 
   useEffect(() => {
-    if (isEditing && textareaRef.current) {
+    if (isThisCardEditing && textareaRef.current) {
       textareaRef.current.focus();
       textareaRef.current.select();
     }
-  }, [isEditing]);
+  }, [isThisCardEditing]);
 
   const handleUpdate = useCallback(() => {
     if (!isBoardConfirmedValid) return;
     if (editedContent.trim() && editedContent.trim() !== card.content) {
       onUpdate(card.id, editedContent.trim());
     }
-    setIsEditing(false);
-  }, [editedContent, card.content, card.id, onUpdate, isBoardConfirmedValid, setIsEditing]);
+    setEditingCardId(null);
+  }, [editedContent, card.content, card.id, onUpdate, isBoardConfirmedValid, setEditingCardId]);
 
   const handleCancelEdit = useCallback(() => {
     setEditedContent(card.content);
-    setIsEditing(false);
-  }, [card.content, setIsEditing]);
+    setEditingCardId(null);
+  }, [card.content, setEditingCardId]);
+
+  const handleEditClick = useCallback(() => {
+    if (!isBoardConfirmedValid || (editingCardId !== null && editingCardId !== card.id)) return;
+    setEditedContent(card.content); // Ensure current content is in textarea
+    setEditingCardId(card.id);
+  }, [isBoardConfirmedValid, editingCardId, card.id, card.content, setEditingCardId]);
 
   const handleDragStartInternal = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!isBoardConfirmedValid || isEditing || !isDraggable) {
+    if (!isBoardConfirmedValid || isThisCardEditing || !isDraggable) {
         e.preventDefault();
         return;
     }
@@ -98,7 +109,7 @@ const RetroCard = memo(function RetroCard({
     e.dataTransfer.effectAllowed = 'move';
     setIsBeingDragged(true);
     onDragStartItem(card, columnId);
-  }, [isEditing, card, columnId, onDragStartItem, isBoardConfirmedValid, isDraggable]);
+  }, [isThisCardEditing, card, columnId, onDragStartItem, isBoardConfirmedValid, isDraggable]);
 
   const handleDragEndInternal = useCallback(() => {
     setIsBeingDragged(false);
@@ -118,26 +129,28 @@ const RetroCard = memo(function RetroCard({
   }, [card.createdAt]);
 
   const handleDirectUpvote = useCallback(() => {
-    if (!isBoardConfirmedValid || isEditing) return;
+    if (!isBoardConfirmedValid || isThisCardEditing) return;
     onUpvote(card.id);
-  }, [isBoardConfirmedValid, isEditing, onUpvote, card.id]);
+  }, [isBoardConfirmedValid, isThisCardEditing, onUpvote, card.id]);
+
+  const isEditDisabled = !isBoardConfirmedValid || (editingCardId !== null && !isThisCardEditing);
 
   const menuItemsContent = (
     <>
-      <DropdownMenuItem onClick={handleDirectUpvote} disabled={!isBoardConfirmedValid || isEditing}>
+      <DropdownMenuItem onClick={handleDirectUpvote} disabled={!isBoardConfirmedValid || isThisCardEditing}>
         <ThumbsUp className="mr-2 h-4 w-4" />
         <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'}</span>
       </DropdownMenuItem>
       {canEditOrDelete && (
         <>
-          <DropdownMenuItem onClick={() => { if(!isEditing) setIsEditing(true);}} disabled={!isBoardConfirmedValid || isEditing}>
+          <DropdownMenuItem onClick={handleEditClick} disabled={isEditDisabled}>
             <Edit3 className="mr-2 h-4 w-4" />
             <span>Edit</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => onDelete(card.id, columnId)}
             className="text-destructive focus:text-destructive focus:bg-destructive/10"
-            disabled={!isBoardConfirmedValid || isEditing}
+            disabled={!isBoardConfirmedValid || isThisCardEditing}
           >
             <Trash2 className="mr-2 h-4 w-4" />
             <span>Delete</span>
@@ -146,47 +159,49 @@ const RetroCard = memo(function RetroCard({
       )}
       <DropdownMenuSeparator />
       <DropdownMenuLabel className="text-xs text-muted-foreground px-2 py-1.5">Card Info</DropdownMenuLabel>
-       <Tooltip>
-        <TooltipTrigger asChild>
-            <DropdownMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
-                <UserIcon className="mr-2 h-3.5 w-3.5" />
-                Author: <span className="truncate max-w-[100px] hover:underline">{card.userName}</span>
-            </DropdownMenuItem>
-        </TooltipTrigger>
-        <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
-            {card.userName}
-        </TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-            <DropdownMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
-                <CalendarDays className="mr-2 h-3.5 w-3.5" />
-                Created: <span className="truncate max-w-[100px] hover:underline">{relativeDate}</span>
-            </DropdownMenuItem>
-        </TooltipTrigger>
-        <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
-            {new Date(card.createdAt).toLocaleString()}
-        </TooltipContent>
-      </Tooltip>
+      <TooltipProvider>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <DropdownMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
+                    <UserIcon className="mr-2 h-3.5 w-3.5" />
+                    Author: <span className="truncate max-w-[100px] hover:underline">{card.userName}</span>
+                </DropdownMenuItem>
+            </TooltipTrigger>
+            <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
+                {card.userName}
+            </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <DropdownMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
+                    <CalendarDays className="mr-2 h-3.5 w-3.5" />
+                    Created: <span className="truncate max-w-[100px] hover:underline">{relativeDate}</span>
+                </DropdownMenuItem>
+            </TooltipTrigger>
+            <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
+                {new Date(card.createdAt).toLocaleString()}
+            </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </>
   );
 
   const contextMenuItemsContent = (
      <>
-      <ContextMenuItem onClick={handleDirectUpvote} disabled={!isBoardConfirmedValid || isEditing}>
+      <ContextMenuItem onClick={handleDirectUpvote} disabled={!isBoardConfirmedValid || isThisCardEditing}>
         <ThumbsUp className="mr-2 h-4 w-4" />
         <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'}</span>
       </ContextMenuItem>
       {canEditOrDelete && (
         <>
-          <ContextMenuItem onClick={() => {if(!isEditing) setIsEditing(true);}} disabled={!isBoardConfirmedValid || isEditing}>
+          <ContextMenuItem onClick={handleEditClick} disabled={isEditDisabled}>
             <Edit3 className="mr-2 h-4 w-4" />
             <span>Edit</span>
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => onDelete(card.id, columnId)}
             className="text-destructive focus:text-destructive focus:bg-destructive/10"
-            disabled={!isBoardConfirmedValid || isEditing}
+            disabled={!isBoardConfirmedValid || isThisCardEditing}
           >
             <Trash2 className="mr-2 h-4 w-4" />
             <span>Delete</span>
@@ -195,43 +210,45 @@ const RetroCard = memo(function RetroCard({
       )}
       <ContextMenuSeparator />
       <ContextMenuLabel className="text-xs text-muted-foreground px-2 py-1.5">Card Info</ContextMenuLabel>
-      <Tooltip>
-        <TooltipTrigger asChild>
-            <ContextMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
-                <UserIcon className="mr-2 h-3.5 w-3.5" />
-                Author: <span className="truncate max-w-[100px] hover:underline">{card.userName}</span>
-            </ContextMenuItem>
-        </TooltipTrigger>
-        <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
-            {card.userName}
-        </TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-            <ContextMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
-                <CalendarDays className="mr-2 h-3.5 w-3.5" />
-                Created: <span className="truncate max-w-[100px] hover:underline">{relativeDate}</span>
-            </ContextMenuItem>
-        </TooltipTrigger>
-        <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
-            {new Date(card.createdAt).toLocaleString()}
-        </TooltipContent>
-      </Tooltip>
+      <TooltipProvider>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <ContextMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
+                    <UserIcon className="mr-2 h-3.5 w-3.5" />
+                    Author: <span className="truncate max-w-[100px] hover:underline">{card.userName}</span>
+                </ContextMenuItem>
+            </TooltipTrigger>
+            <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
+                {card.userName}
+            </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <ContextMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
+                    <CalendarDays className="mr-2 h-3.5 w-3.5" />
+                    Created: <span className="truncate max-w-[100px] hover:underline">{relativeDate}</span>
+                </ContextMenuItem>
+            </TooltipTrigger>
+            <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
+                {new Date(card.createdAt).toLocaleString()}
+            </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </>
   );
 
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger disabled={isEditing || !isBoardConfirmedValid || !isDraggable}>
+      <ContextMenuTrigger disabled={isThisCardEditing || !isBoardConfirmedValid || !isDraggable}>
         <Card
             data-card-id={card.id}
-            draggable={!isEditing && isBoardConfirmedValid && isDraggable}
+            draggable={!isThisCardEditing && isBoardConfirmedValid && isDraggable}
             onDragStart={handleDragStartInternal}
             onDragEnd={handleDragEndInternal}
             className={cn(
               "bg-card/90 shadow-sm hover:shadow-md transition-all duration-200 relative group border min-h-[80px] flex flex-col",
-              isEditing ? "ring-2 ring-primary cursor-default" 
+              isThisCardEditing ? "ring-2 ring-primary cursor-default"
                         : cn(
                             (isBoardConfirmedValid && isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"),
                             isMergeTarget && "ring-2 ring-offset-1 ring-primary shadow-lg",
@@ -243,7 +260,7 @@ const RetroCard = memo(function RetroCard({
               !isBoardConfirmedValid && "opacity-60"
             )}
         >
-          {!isEditing && isBoardConfirmedValid && isDraggable && (
+          {!isThisCardEditing && isBoardConfirmedValid && isDraggable && (
             <div className="absolute top-1 right-1 z-10">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -263,14 +280,14 @@ const RetroCard = memo(function RetroCard({
             </div>
           )}
 
-          <CardContent className={cn("p-3 flex-grow pr-6 break-words", isEditing && "pb-1")}>
-            {isEditing && canEditOrDelete && isBoardConfirmedValid ? (
+          <CardContent className={cn("p-3 flex-grow pr-6 break-words", isThisCardEditing && "pb-1")}>
+            {isThisCardEditing && canEditOrDelete && isBoardConfirmedValid ? (
               <div className="space-y-2">
                 <Textarea
                   ref={textareaRef}
                   value={editedContent}
                   onChange={(e) => setEditedContent(e.target.value)}
-                  className="w-full min-h-[60px] text-sm bg-transparent border-0 focus:ring-0 focus:outline-none resize-none text-card-foreground whitespace-pre-wrap py-1"
+                  className="w-full min-h-[60px] text-sm bg-transparent border-0 focus:ring-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 resize-none text-card-foreground whitespace-pre-wrap py-1"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -297,20 +314,20 @@ const RetroCard = memo(function RetroCard({
             )}
           </CardContent>
 
-          {!isEditing && (
+          {!isThisCardEditing && (
             <div className="px-3 pb-2 flex items-center justify-end space-x-1 text-xs text-muted-foreground">
               <Button
                 variant="ghost"
                 size="icon-sm"
                 className={cn(
-                  "h-6 w-6 p-0.5 hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity duration-150",
-                  hasUpvoted && "text-primary hover:text-primary/80 group-hover:opacity-100", 
-                  (!isBoardConfirmedValid || isEditing) && "cursor-not-allowed opacity-50 group-hover:opacity-50",
-                  isBoardConfirmedValid && !isEditing && "cursor-pointer"
+                  "h-6 w-6 p-0.5 hover:bg-accent/50",
+                  hasUpvoted && "text-primary hover:text-primary/80",
+                  (!isBoardConfirmedValid || isThisCardEditing) && "cursor-not-allowed opacity-50",
+                  (isBoardConfirmedValid && !isThisCardEditing) && "cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                 )}
                 onClick={handleDirectUpvote}
                 aria-label={hasUpvoted ? 'Remove upvote' : 'Upvote'}
-                disabled={!isBoardConfirmedValid || isEditing}
+                disabled={!isBoardConfirmedValid || isThisCardEditing}
               >
                 <ThumbsUp className={cn("h-3.5 w-3.5")} />
               </Button>
@@ -319,7 +336,7 @@ const RetroCard = memo(function RetroCard({
           )}
         </Card>
       </ContextMenuTrigger>
-      {isBoardConfirmedValid && !isEditing && isDraggable && (
+      {isBoardConfirmedValid && !isThisCardEditing && isDraggable && (
         <ContextMenuContent className="w-56">
           {contextMenuItemsContent}
         </ContextMenuContent>
@@ -329,4 +346,3 @@ const RetroCard = memo(function RetroCard({
 });
 
 export default RetroCard;
-
