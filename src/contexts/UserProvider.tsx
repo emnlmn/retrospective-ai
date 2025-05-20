@@ -2,7 +2,7 @@
 "use client";
 
 import type { User } from '@/lib/types';
-import { useBoardStore } from '@/store/boardStore';
+import { useBoardStore, useBoardActions } from '@/store/boardStore';
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import UserSetupDialog from '@/components/UserSetupDialog';
 
@@ -16,14 +16,22 @@ interface UserDialogContextType {
 const UserDialogContext = createContext<UserDialogContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const { user, isUserLoading, actions } = useBoardStore();
+  const { user, isUserLoading, isBoardsLoading } = useBoardStore((state) => ({
+    user: state.user,
+    isUserLoading: state.isUserLoading,
+    isBoardsLoading: state.isBoardsLoading,
+  }));
+  const { setUser, loadInitialUserAndBoards } = useBoardActions();
   const [showUserSetupDialog, setShowUserSetupDialog] = useState(false);
 
   useEffect(() => {
-    actions.loadInitialUser();
-  }, [actions]);
+    // Load user from localStorage (via Zustand persist) and then fetch boards
+    loadInitialUserAndBoards();
+  }, [loadInitialUserAndBoards]);
 
   useEffect(() => {
+    // This effect runs after loadInitialUserAndBoards has potentially set the user
+    // and updated isUserLoading.
     if (!isUserLoading && !user) {
       setShowUserSetupDialog(true);
     } else if (user) {
@@ -32,17 +40,18 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [user, isUserLoading]);
 
   const handleUserSubmit = (name: string) => {
-    actions.setUser(name);
+    setUser(name); // This updates Zustand store, which persists user to localStorage
     setShowUserSetupDialog(false);
+    // After setting user, re-fetch boards in case they are user-specific (though not in current API)
+    // or just to ensure a fresh state if this is the very first app load.
+    // loadInitialUserAndBoards will handle this.
   };
 
-  if (isUserLoading) {
-    return <div className="flex items-center justify-center h-screen"><p>Loading user...</p></div>;
+  // Display loading indicator while user or boards are loading
+  if (isUserLoading || (user && isBoardsLoading)) { // Show loading if user exists and boards are loading
+    return <div className="flex items-center justify-center h-screen"><p>Loading app data...</p></div>;
   }
   
-  // If user is loaded but null, and dialog isn't forced open yet, it will be by the effect above.
-  // This ensures children are only rendered if user exists or dialog is about to handle it.
-
   return (
     <UserDialogContext.Provider value={{ showUserSetupDialog, setShowUserSetupDialog, handleUserSubmit }}>
       {showUserSetupDialog && <UserSetupDialog onSubmit={handleUserSubmit} />}
@@ -55,7 +64,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// This hook is now specific for dialog control if needed elsewhere, user data comes from useBoardStore
 export function useUserDialog() {
   const context = useContext(UserDialogContext);
   if (context === undefined) {
@@ -63,6 +71,3 @@ export function useUserDialog() {
   }
   return context;
 }
-
-// For accessing user data, components should directly use useBoardStore:
-// const { user } = useBoardStore();
