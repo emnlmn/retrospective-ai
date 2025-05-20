@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { BoardData, CardData, ColumnData, ColumnId } from '@/lib/types';
 import { DEFAULT_COLUMNS_CONFIG, INITIAL_COLUMNS_DATA } from '@/lib/types';
@@ -37,11 +37,13 @@ export default function BoardPage() {
   const [draggedItem, setDraggedItem] = useState<DraggedItemType | null>(null);
   const [isBoardConfirmedValid, setIsBoardConfirmedValid] = useState(false);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const sseConnectedRef = useRef(false);
+
 
   useEffect(() => {
     if (boardId) {
       storeActions.setCurrentBoardId(boardId);
-      setIsBoardConfirmedValid(false); 
+      setIsBoardConfirmedValid(false); // Reset validity on board change
       setEditingCardId(null); // Reset editing state when board changes
     }
   }, [boardId, storeActions]);
@@ -51,27 +53,33 @@ export default function BoardPage() {
       return;
     }
     
-    let sseConnected = false;
+    // console.log(`SSE: Initializing EventSource for board ${boardId}. isBoardConfirmedValid initially: ${isBoardConfirmedValid}`);
     const eventSource = new EventSource(`/api/boards/${boardId}/events`);
+    sseConnectedRef.current = false; // Reset on new EventSource creation
 
     eventSource.onopen = () => {
-      sseConnected = true;
+      // console.log(`SSE: Connection opened for board ${boardId}`);
+      sseConnectedRef.current = true;
     };
 
     eventSource.addEventListener('boardUpdate', (event) => {
       try {
         const updatedBoardFromServer = JSON.parse(event.data as string) as BoardData | null;
+        // console.log(`SSE: Received boardUpdate for board ${boardId}`, updatedBoardFromServer);
         
         if (updatedBoardFromServer && updatedBoardFromServer.id === boardId) {
           storeActions.setBoardFromServer(updatedBoardFromServer);
           setIsBoardConfirmedValid(true);
-        } else if (updatedBoardFromServer === null && boardId === (params.boardId as string) ) { // Check if the null update is for the current board
+        } else if (updatedBoardFromServer === null && boardId) { // Check if the null update is for the current board
           setIsBoardConfirmedValid(false);
           const boardStillInClientStore = useBoardStore.getState().boards.find(b => b.id === boardId);
           if (boardStillInClientStore) {
+            // console.log(`SSE: Board ${boardId} is null on server but was in client store. Removing and redirecting.`);
             storeActions.removeBoardFromServer(boardId);
             toast({ title: "Board Unavailable", description: "This board was deleted or is no longer accessible. Redirecting to home...", variant: "destructive" });
             router.push('/');
+          } else {
+            // console.log(`SSE: Board ${boardId} is null on server and was not in client store. Likely invalid URL or new board awaiting creation event.`);
           }
         }
       } catch (error) {
@@ -80,31 +88,35 @@ export default function BoardPage() {
       }
     });
 
-    eventSource.onerror = (error) => {
-      console.error(`SSE: EventSource failed for board ${boardId}:`, error);
-      if (sseConnected) {
+    eventSource.onerror = (errorEvent) => { // Renamed 'error' to 'errorEvent' for clarity as it's an Event object
+      console.error(`SSE: EventSource error for board ${boardId}. Event type: ${errorEvent.type}`, errorEvent);
+      if (sseConnectedRef.current) { // Only show toast if connection was previously established
         const currentBoardExistsInStore = useBoardStore.getState().boards.find(b => b.id === boardId);
         if (currentBoardExistsInStore) { 
             toast({ title: "Connection Issue", description: "Lost real-time connection to the board. Some changes may not appear automatically.", variant: "destructive" });
         }
       }
-      sseConnected = false;
-      eventSource.close();
+      sseConnectedRef.current = false; // Mark as not connected
+      if (eventSource.readyState !== EventSource.CLOSED) {
+        eventSource.close(); // Explicitly close to stop further retries by the browser on this instance
+      }
     };
 
     return () => {
-      if (sseConnected) {
+      // console.log(`SSE: Closing connection for board ${boardId}`);
+      if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
         eventSource.close();
-        sseConnected = false;
       }
+      sseConnectedRef.current = false; // Reset on cleanup
     };
-  }, [boardId, storeActions, router, toast, params.boardId]);
+  }, [boardId, storeActions, router, toast]); 
 
 
   const currentBoardFromStore = useMemo(() => boards.find(b => b.id === boardId), [boards, boardId]);
 
   const currentBoard = useMemo(() => {
     if (!currentBoardFromStore) return null;
+    // Deep clone and sanitize
     const board = JSON.parse(JSON.stringify(currentBoardFromStore)) as BoardData;
     board.cards = board.cards || {}; 
     const sanitizedColumns: BoardData['columns'] = {
@@ -209,18 +221,28 @@ export default function BoardPage() {
   }
 
   if (currentBoard && isBoardConfirmedValid) {
+    // Board is confirmed and data is available, render the board
     if (!currentBoard.columns || !currentBoard.cards) {
+      // This should ideally not happen if sanitization is correct
       return <div className="text-center py-10">Board data is incomplete. Trying to sync... <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
     }
   } else if (currentBoard && !isBoardConfirmedValid) {
+    // Board exists in client store, but server hasn't confirmed it for this session yet
     return (<div className="text-center py-10">Connecting to board and verifying...<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
-  } else if (!currentBoard && !isBoardConfirmedValid && isLoadingAllBoards) { // Added isLoadingAllBoards check
+  } else if (!currentBoard && !isBoardConfirmedValid && isLoadingAllBoards) {
+    // Still loading the list of all boards, and current board isn't in store yet
     return (<div className="text-center py-10">Loading boards list...<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
-  } else if (!currentBoard && !isBoardConfirmedValid && !isLoadingAllBoards) { // Added isLoadingAllBoards check
+  } else if (!currentBoard && !isBoardConfirmedValid && !isLoadingAllBoards) {
+    // Boards list loaded, but this specific board ID wasn't found, and server hasn't confirmed it (or denied it yet via SSE null)
     return (<div className="text-center py-10">Board not found or is being loaded. If this persists, the board may not exist or access is denied.<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
   } else if (!currentBoard && isBoardConfirmedValid) {
+     // This state is inconsistent: server confirmed a board, but it's not in client store.
+     // This might happen if SSE confirms validity before store is populated by initial fetch.
+     // Or if the board was deleted locally after server confirmation.
+     // SSE handler should ideally correct this by re-adding or if server sends null, redirecting.
      return (<div className="text-center py-10">Board data is inconsistent. Trying to sync...<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
   } else {
+     // Fallback for any other unexpected state
      return (<div className="text-center py-10">Board data unavailable or in an unexpected state. <Link href="/"><Button variant="link">Go Home</Button></Link><Script id="redirect-home-fallback">{`setTimeout(() => { if (window.location.pathname !== '/') window.location.href = '/'; }, 100);`}</Script></div>);
   }
 
@@ -307,3 +329,4 @@ export default function BoardPage() {
     </div>
   );
 }
+
