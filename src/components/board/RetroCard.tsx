@@ -6,7 +6,7 @@ import type { CardData, ColumnId } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
-import { ThumbsUp, Edit3, Trash2, Check, X, MoreVertical, Info, User as UserIcon, CalendarDays } from 'lucide-react';
+import { ThumbsUp, Edit3, Trash2, Check, X, MoreVertical, User as UserIcon, CalendarDays } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import {
@@ -36,6 +36,7 @@ interface RetroCardProps {
   onUpvote: (cardId: string) => void;
   onDragStartItem: (card: CardData, sourceColumnId: ColumnId) => void;
   isMergeTarget?: boolean;
+  isBoardConfirmedValid: boolean; // Receive validity
 }
 
 const RetroCard = memo(function RetroCard({
@@ -45,7 +46,8 @@ const RetroCard = memo(function RetroCard({
     onDelete,
     onUpvote,
     onDragStartItem,
-    isMergeTarget = false
+    isMergeTarget = false,
+    isBoardConfirmedValid, // Use validity
 }: RetroCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(card.content);
@@ -72,11 +74,12 @@ const RetroCard = memo(function RetroCard({
   }, [isEditing]);
 
   const handleUpdate = useCallback(() => {
+    if (!isBoardConfirmedValid) return;
     if (editedContent.trim() && editedContent.trim() !== card.content) {
       onUpdate(card.id, editedContent.trim());
     }
     setIsEditing(false);
-  }, [editedContent, card.content, card.id, onUpdate]);
+  }, [editedContent, card.content, card.id, onUpdate, isBoardConfirmedValid]);
 
   const handleCancelEdit = useCallback(() => {
     setEditedContent(card.content);
@@ -84,7 +87,7 @@ const RetroCard = memo(function RetroCard({
   }, [card.content]);
 
   const handleDragStartInternal = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (isEditing) {
+    if (!isBoardConfirmedValid || isEditing) { // Check validity
         e.preventDefault();
         return;
     }
@@ -92,7 +95,7 @@ const RetroCard = memo(function RetroCard({
     e.dataTransfer.effectAllowed = 'move';
     setIsBeingDragged(true);
     onDragStartItem(card, columnId);
-  }, [isEditing, card, columnId, onDragStartItem]);
+  }, [isEditing, card, columnId, onDragStartItem, isBoardConfirmedValid]);
 
   const handleDragEndInternal = useCallback(() => {
     setIsBeingDragged(false);
@@ -111,21 +114,62 @@ const RetroCard = memo(function RetroCard({
     }
   }, [card.createdAt]);
 
-  const cardMenuItems = (
+  const handleDirectUpvote = () => {
+    if (!isBoardConfirmedValid) return;
+    onUpvote(card.id);
+  };
+
+  const menuItems = (
     <>
-      <ContextMenuItem onClick={() => onUpvote(card.id)}>
+      <DropdownMenuItem onClick={handleDirectUpvote} disabled={!isBoardConfirmedValid}>
+        <ThumbsUp className="mr-2 h-4 w-4" />
+        <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'} ({card.upvotes.length})</span>
+      </DropdownMenuItem>
+      {canEditOrDelete && (
+        <>
+          <DropdownMenuItem onClick={() => setIsEditing(true)} disabled={!isBoardConfirmedValid}>
+            <Edit3 className="mr-2 h-4 w-4" />
+            <span>Edit</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem 
+            onClick={() => onDelete(card.id, columnId)} 
+            className="text-destructive focus:text-destructive focus:bg-destructive/10"
+            disabled={!isBoardConfirmedValid}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            <span>Delete</span>
+          </DropdownMenuItem>
+        </>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel className="text-xs text-muted-foreground px-2 py-1.5">Card Info</DropdownMenuLabel>
+      <DropdownMenuItem disabled className="opacity-70 cursor-default">
+        <UserIcon className="mr-2 h-3.5 w-3.5" />
+        Author: {card.userName}
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled className="opacity-70 cursor-default">
+        <CalendarDays className="mr-2 h-3.5 w-3.5" />
+        Created: {relativeDate}
+      </DropdownMenuItem>
+    </>
+  );
+  
+  const contextMenuItems = (
+     <>
+      <ContextMenuItem onClick={handleDirectUpvote} disabled={!isBoardConfirmedValid}>
         <ThumbsUp className="mr-2 h-4 w-4" />
         <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'} ({card.upvotes.length})</span>
       </ContextMenuItem>
       {canEditOrDelete && (
         <>
-          <ContextMenuItem onClick={() => setIsEditing(true)}>
+          <ContextMenuItem onClick={() => setIsEditing(true)} disabled={!isBoardConfirmedValid}>
             <Edit3 className="mr-2 h-4 w-4" />
             <span>Edit</span>
           </ContextMenuItem>
           <ContextMenuItem 
             onClick={() => onDelete(card.id, columnId)} 
             className="text-destructive focus:text-destructive focus:bg-destructive/10"
+            disabled={!isBoardConfirmedValid}
           >
             <Trash2 className="mr-2 h-4 w-4" />
             <span>Delete</span>
@@ -145,60 +189,27 @@ const RetroCard = memo(function RetroCard({
     </>
   );
 
-  const dropdownMenuItems = (
-    <>
-      <DropdownMenuItem onClick={() => onUpvote(card.id)}>
-        <ThumbsUp className="mr-2 h-4 w-4" />
-        <span>{hasUpvoted ? 'Remove Upvote' : 'Upvote'} ({card.upvotes.length})</span>
-      </DropdownMenuItem>
-      {canEditOrDelete && (
-        <>
-          <DropdownMenuItem onClick={() => setIsEditing(true)}>
-            <Edit3 className="mr-2 h-4 w-4" />
-            <span>Edit</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            onClick={() => onDelete(card.id, columnId)} 
-            className="text-destructive focus:text-destructive focus:bg-destructive/10"
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            <span>Delete</span>
-          </DropdownMenuItem>
-        </>
-      )}
-      <DropdownMenuSeparator />
-      <DropdownMenuLabel className="text-xs text-muted-foreground px-2 py-1.5">Card Info</DropdownMenuLabel>
-      <DropdownMenuItem disabled className="opacity-70 cursor-default">
-        <UserIcon className="mr-2 h-3.5 w-3.5" />
-        Author: {card.userName}
-      </DropdownMenuItem>
-      <DropdownMenuItem disabled className="opacity-70 cursor-default">
-        <CalendarDays className="mr-2 h-3.5 w-3.5" />
-        Created: {relativeDate}
-      </DropdownMenuItem>
-    </>
-  );
-
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger disabled={isEditing}>
+      <ContextMenuTrigger disabled={isEditing || !isBoardConfirmedValid}>
         <Card
             data-card-id={card.id}
-            draggable={!isEditing}
+            draggable={!isEditing && isBoardConfirmedValid} // Only draggable if valid and not editing
             onDragStart={handleDragStartInternal}
             onDragEnd={handleDragEndInternal}
             className={cn(
               "bg-card/90 shadow-sm hover:shadow-md transition-all duration-200 relative group border min-h-[80px] flex flex-col",
-              isEditing ? "cursor-default ring-2 ring-primary" : "cursor-grab active:cursor-grabbing",
-              isMergeTarget && !isEditing && "ring-2 ring-offset-1 ring-primary shadow-lg",
+              isEditing ? "cursor-default ring-2 ring-primary" : (isBoardConfirmedValid ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"),
+              isMergeTarget && !isEditing && isBoardConfirmedValid && "ring-2 ring-offset-1 ring-primary shadow-lg",
               !isMergeTarget && columnId === 'wentWell' && 'border-l-4 border-l-success',
               !isMergeTarget && columnId === 'toImprove' && 'border-l-4 border-l-destructive',
               !isMergeTarget && columnId === 'actionItems' && 'border-l-4 border-l-accent', 
-              isBeingDragged && "opacity-50" 
+              isBeingDragged && "opacity-50",
+              !isBoardConfirmedValid && "opacity-60" // Visual cue for invalid board
             )}
         >
-          {!isEditing && (
+          {!isEditing && isBoardConfirmedValid && (
             <div className="absolute top-1 right-1 z-10">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -212,14 +223,14 @@ const RetroCard = memo(function RetroCard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  {dropdownMenuItems}
+                  {menuItems}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
           )}
 
           <CardContent className={cn("p-3 flex-grow pr-6", isEditing && "pb-1")}>
-            {isEditing && canEditOrDelete ? (
+            {isEditing && canEditOrDelete && isBoardConfirmedValid ? (
               <div className="space-y-2">
                 <Textarea
                   ref={textareaRef}
@@ -252,7 +263,7 @@ const RetroCard = memo(function RetroCard({
             )}
           </CardContent>
           
-          {!isEditing && (
+          {!isEditing && ( // Footer for upvote button, visible when not editing
             <div className="px-3 pb-2 flex items-center justify-end space-x-1 text-xs text-muted-foreground">
               <Button 
                 variant="ghost" 
@@ -261,8 +272,9 @@ const RetroCard = memo(function RetroCard({
                   "h-6 w-6 p-0.5 hover:bg-accent/50", 
                   hasUpvoted && "text-primary hover:text-primary/80"
                 )}
-                onClick={() => onUpvote(card.id)}
+                onClick={handleDirectUpvote}
                 aria-label={hasUpvoted ? 'Remove upvote' : 'Upvote'}
+                disabled={!isBoardConfirmedValid} // Disable if board not valid
               >
                 <ThumbsUp className={cn("h-3.5 w-3.5")} />
               </Button>
@@ -271,14 +283,14 @@ const RetroCard = memo(function RetroCard({
           )}
         </Card>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-56">
-        {cardMenuItems}
-      </ContextMenuContent>
+      {isBoardConfirmedValid && ( // Only enable context menu if board is valid
+        <ContextMenuContent className="w-56">
+          {contextMenuItems}
+        </ContextMenuContent>
+      )}
     </ContextMenu>
   );
 });
 
 export default RetroCard;
 
-
-    

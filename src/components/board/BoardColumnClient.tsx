@@ -32,6 +32,7 @@ interface BoardColumnClientProps {
   currentUserId: string;
   draggedItem: DraggedItemType | null;
   setDraggedItem: (item: DraggedItemType | null) => void;
+  isBoardConfirmedValid: boolean; // Receive validity prop
 }
 
 export default function BoardColumnClient({
@@ -46,6 +47,7 @@ export default function BoardColumnClient({
   currentUserId,
   draggedItem,
   setDraggedItem,
+  isBoardConfirmedValid, // Use this prop
 }: BoardColumnClientProps) {
   const [newCardContent, setNewCardContent] = useState('');
   const [isAddingCard, setIsAddingCard] = useState(false);
@@ -53,22 +55,24 @@ export default function BoardColumnClient({
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
 
   const handleAddCardSubmit = useCallback(() => {
+    if (!isBoardConfirmedValid) return; // Check validity
     if (newCardContent.trim()) {
       onAddCard(columnId, newCardContent.trim());
       setNewCardContent('');
       setIsAddingCard(false);
     }
-  }, [newCardContent, onAddCard, columnId]);
+  }, [newCardContent, onAddCard, columnId, isBoardConfirmedValid]);
 
   const handleDragStart = useCallback((card: CardData, srcColId: ColumnId) => {
+    if (!isBoardConfirmedValid) return; // Check validity
     setDraggedItem({ ...card, sourceColumnId: srcColId });
     setMergeTargetId(null);
     setPlaceholderIndex(null);
-  }, [setDraggedItem]);
+  }, [setDraggedItem, isBoardConfirmedValid]);
 
   const handleListAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (!draggedItem) {
+    if (!draggedItem || !isBoardConfirmedValid) { // Check validity
         setPlaceholderIndex(null);
         setMergeTargetId(null);
         return;
@@ -133,12 +137,17 @@ export default function BoardColumnClient({
     setPlaceholderIndex(newCalculatedIndex);
     setMergeTargetId(potentialMergeId);
 
-  }, [draggedItem, cards]);
+  }, [draggedItem, cards, isBoardConfirmedValid]);
 
 
   const handleListAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (!draggedItem) return;
+    if (!draggedItem || !isBoardConfirmedValid) { // Check validity
+      setPlaceholderIndex(null);
+      setMergeTargetId(null);
+      if (draggedItem) setDraggedItem(null); // Clear dragged item if action is denied
+      return;
+    }
 
     if (mergeTargetId && mergeTargetId !== draggedItem.id) {
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, -1, mergeTargetId);
@@ -168,7 +177,7 @@ export default function BoardColumnClient({
     setPlaceholderIndex(null);
     setMergeTargetId(null);
     setDraggedItem(null); 
-  }, [draggedItem, cards, columnId, onDragEnd, placeholderIndex, mergeTargetId, setDraggedItem]);
+  }, [draggedItem, cards, columnId, onDragEnd, placeholderIndex, mergeTargetId, setDraggedItem, isBoardConfirmedValid]);
 
   const handleListAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -186,15 +195,19 @@ export default function BoardColumnClient({
               variant="ghost"
               size="icon"
               className="text-muted-foreground hover:text-accent-foreground hover:bg-accent"
-              onClick={() => setIsAddingCard(true)}
+              onClick={() => {
+                if (!isBoardConfirmedValid) return; // Check validity
+                setIsAddingCard(true);
+              }}
               aria-label="Add new card"
+              disabled={!isBoardConfirmedValid} // Disable if board not valid
             >
               <PlusCircle className="h-5 w-5" />
             </Button>
         )}
       </div>
 
-      {isAddingCard && (
+      {isAddingCard && isBoardConfirmedValid && ( // Only show if board is valid
         <div className="mb-2 px-1">
           <ShadCard className="bg-card/80 shadow-md">
             <CardContent className="p-2">
@@ -245,9 +258,10 @@ export default function BoardColumnClient({
                   onUpdate={onUpdateCard}
                   onDelete={onDeleteCard}
                   onUpvote={onUpvoteCard}
-                  currentUserId={currentUserId} // This prop is not used in RetroCard anymore due to Zustand
+                  currentUserId={currentUserId} 
                   onDragStartItem={handleDragStart}
                   isMergeTarget={card.id === mergeTargetId && card.id !== draggedItem?.id}
+                  isBoardConfirmedValid={isBoardConfirmedValid} // Pass down
                 />
               </React.Fragment>
             ))}
@@ -266,3 +280,4 @@ export default function BoardColumnClient({
     </div>
   );
 }
+

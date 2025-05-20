@@ -34,10 +34,14 @@ export default function BoardPage() {
 
   const [isAISuggesting, setIsAISuggesting] = useState(false);
   const [draggedItem, setDraggedItem] = useState<DraggedItemType | null>(null);
-  
+  const [isBoardConfirmedValid, setIsBoardConfirmedValid] = useState(false); // New state
+
   useEffect(() => {
     if (boardId) {
       storeActions.setCurrentBoardId(boardId);
+      // Initial check for board validity based on store
+      const initialBoard = useBoardStore.getState().boards.find(b => b.id === boardId);
+      setIsBoardConfirmedValid(!!initialBoard);
     }
   }, [boardId, storeActions]);
 
@@ -63,8 +67,9 @@ export default function BoardPage() {
         
         if (updatedBoardFromServer && updatedBoardFromServer.id === boardId) {
           storeActions.setBoardFromServer(updatedBoardFromServer);
-        } else if (updatedBoardFromServer === null && boardId === params.boardId) { // Check params.boardId to ensure this is for the current page
-          // Server explicitly says this current board is null (e.g., deleted by another user or server restart).
+          setIsBoardConfirmedValid(true); // Board confirmed valid
+        } else if (updatedBoardFromServer === null && boardId === boardId) { // Check current boardId
+          setIsBoardConfirmedValid(false); // Board confirmed invalid
           const boardIsCurrentlyInClientStore = useBoardStore.getState().boards.find(b => b.id === boardId);
           
           if (boardIsCurrentlyInClientStore) {
@@ -73,14 +78,11 @@ export default function BoardPage() {
             storeActions.removeBoardFromServer(boardId);
             router.push('/');
           } else {
-            // Board was NOT in client store, and server says it's null.
-            // This could be an invalid URL, or a new board where the server's initial response was null
-            // and we are waiting for the subsequent creation event.
-            console.warn(`SSE: Received null for board ${boardId}, but it wasn't in client store. Waiting for potential creation event or persisting 'not found' state.`);
-            // No automatic redirect here. Let the UI show "Board not found or is being loaded..."
+            console.warn(`SSE: Received null for board ${boardId}, but it wasn't in client store. It might be an invalid URL or waiting for creation event.`);
+            // Do not redirect here, let UI show "Board not found or is being loaded..."
+            // If it's a truly invalid board, isBoardConfirmedValid remains false.
           }
         }
-        // If updatedBoardFromServer is for a *different* board ID, Zustand's setBoardFromServer will handle it correctly if it's an update for another board.
       } catch (error) {
         console.error('SSE: Failed to parse boardUpdate:', error);
         toast({ title: "Real-time Sync Error", description: "Could not process an update from the server.", variant: "destructive" });
@@ -89,13 +91,15 @@ export default function BoardPage() {
     
     eventSource.onerror = (error) => {
       console.error(`SSE: EventSource failed for board ${boardId}:`, error);
-      if (sseConnected) { // Only toast if we thought the connection was okay or if the board was thought to exist.
+      if (sseConnected) { 
         const currentBoardExists = useBoardStore.getState().boards.find(b => b.id === boardId);
         if (currentBoardExists) {
           toast({ title: "Connection Issue", description: "Lost real-time connection to the board. Some changes may not appear automatically.", variant: "destructive" });
         }
       }
       sseConnected = false;
+      // Don't automatically set isBoardConfirmedValid to false on generic SSE error,
+      // as it might be a temporary network blip. Let explicit null updates handle validity.
       eventSource.close();
     };
 
@@ -106,7 +110,7 @@ export default function BoardPage() {
         sseConnected = false;
       }
     };
-  }, [boardId, storeActions, router, toast, params.boardId]); // params.boardId to ensure effect reruns if it changes (though boardId itself should suffice)
+  }, [boardId, storeActions, router, toast]); // Removed setIsBoardConfirmedValid from deps
 
 
   const currentBoardFromStore = useMemo(() => boards.find(b => b.id === boardId), [boards, boardId]);
@@ -147,14 +151,16 @@ export default function BoardPage() {
     
     (Object.keys(board.columns) as ColumnId[]).forEach(colId => {
         const column = board.columns[colId];
-        column.cardIds = column.cardIds.filter(cardId => board.cards[cardId] !== undefined);
-        column.cardIds.forEach((cardId, index) => {
-            if (board.cards[cardId]) { 
-                if (board.cards[cardId].order !== index) {
-                    board.cards[cardId] = { ...board.cards[cardId], order: index };
-                }
-            }
-        });
+        if (column && Array.isArray(column.cardIds)) { // Ensure column and cardIds exist
+          column.cardIds = column.cardIds.filter(cardId => board.cards && board.cards[cardId] !== undefined);
+          column.cardIds.forEach((cardId, index) => {
+              if (board.cards && board.cards[cardId]) { 
+                  if (board.cards[cardId].order !== index) {
+                      board.cards[cardId] = { ...board.cards[cardId], order: index };
+                  }
+              }
+          });
+        }
     });
 
     return board;
@@ -162,7 +168,11 @@ export default function BoardPage() {
 
 
   const handleAddCard = useCallback(async (columnId: ColumnId, content: string) => {
-    if (!currentBoard || !user) { // Check currentBoard which is derived and sanitized
+    if (!isBoardConfirmedValid) {
+      toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" });
+      return;
+    }
+    if (!currentBoard || !user) {
         toast({ title: "Cannot Add Card", description: "Board or user data is missing, or board is not fully loaded.", variant: "destructive" });
         return;
     }
@@ -173,9 +183,13 @@ export default function BoardPage() {
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while adding the card.";
         toast({ title: "Failed to Add Card", description: errorMessage, variant: "destructive" });
     }
-  }, [currentBoard, user, storeActions, toast]);
+  }, [currentBoard, user, storeActions, toast, isBoardConfirmedValid]);
 
   const handleUpdateCard = useCallback(async (cardId: string, newContent: string) => {
+    if (!isBoardConfirmedValid) {
+      toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" });
+      return;
+    }
     if (!currentBoard) {
       toast({ title: "Cannot Update Card", description: "Board data is missing.", variant: "destructive" });
       return;
@@ -187,9 +201,13 @@ export default function BoardPage() {
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while updating the card.";
         toast({ title: "Failed to Update Card", description: errorMessage, variant: "destructive" });
     }
-  }, [currentBoard, storeActions, toast]);
+  }, [currentBoard, storeActions, toast, isBoardConfirmedValid]);
 
   const handleDeleteCard = useCallback(async (cardId: string, columnId: ColumnId) => {
+    if (!isBoardConfirmedValid) {
+      toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" });
+      return;
+    }
     if (!currentBoard) {
       toast({ title: "Cannot Delete Card", description: "Board data is missing.", variant: "destructive" });
       return;
@@ -201,9 +219,13 @@ export default function BoardPage() {
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while deleting the card.";
         toast({ title: "Failed to Delete Card", description: errorMessage, variant: "destructive" });
     }
-  }, [currentBoard, storeActions, toast]);
+  }, [currentBoard, storeActions, toast, isBoardConfirmedValid]);
 
   const handleUpvoteCard = useCallback(async (cardId: string) => {
+    if (!isBoardConfirmedValid) {
+      toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" });
+      return;
+    }
     if (!currentBoard || !user) {
       toast({ title: "Cannot Upvote Card", description: "Board or user data is missing.", variant: "destructive" });
       return;
@@ -215,7 +237,7 @@ export default function BoardPage() {
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while upvoting the card.";
         toast({ title: "Failed to Upvote Card", description: errorMessage, variant: "destructive" });
     }
-  }, [currentBoard, user, storeActions, toast]);
+  }, [currentBoard, user, storeActions, toast, isBoardConfirmedValid]);
 
   const handleDragEnd = useCallback(async (
     draggedCardId: string, 
@@ -224,7 +246,11 @@ export default function BoardPage() {
     destinationIndexInDropTarget: number,
     mergeTargetCardId?: string
   ) => {
-    // Use currentBoardFromStore directly for the check, as currentBoard might be briefly null during updates
+    if (!isBoardConfirmedValid) {
+      toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid. Drag action cancelled.", variant: "destructive" });
+      setDraggedItem(null); // Reset dragged item if action is denied
+      return;
+    }
     const boardState = useBoardStore.getState().boards.find(b => b.id === boardId); 
     if (!boardState) {
       console.error("Board not found in store, cannot process drag.");
@@ -241,7 +267,7 @@ export default function BoardPage() {
   
     try {
         await storeActions.moveCard(
-          boardState.id, // Use boardState.id
+          boardState.id, 
           draggedCardId,
           sourceColumnId,
           destColumnId,
@@ -255,11 +281,15 @@ export default function BoardPage() {
     } finally {
         setDraggedItem(null);
     }
-  }, [boardId, storeActions, toast]); // Depend on boardId to get the correct board state
+  }, [boardId, storeActions, toast, isBoardConfirmedValid]); 
 
 
   const handleAISuggestions = useCallback(async () => {
-    if (!currentBoard || !user || !currentBoard.columns || !currentBoard.cards) { // Check derived currentBoard
+    if (!isBoardConfirmedValid) {
+      toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" });
+      return;
+    }
+    if (!currentBoard || !user || !currentBoard.columns || !currentBoard.cards) { 
         toast({ title: "Error", description: "Board data is not fully loaded for AI suggestions.", variant: "destructive" });
         return;
     }
@@ -293,7 +323,7 @@ export default function BoardPage() {
       toast({ title: "AI Error", description: "Could not get AI suggestions.", variant: "destructive" });
     }
     setIsAISuggesting(false);
-  }, [currentBoard, user, storeActions, toast]);
+  }, [currentBoard, user, storeActions, toast, isBoardConfirmedValid]);
 
   const handleShareBoard = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -320,20 +350,39 @@ export default function BoardPage() {
   }
 
   if (!user) {
-    return <div className="text-center py-10">User not set up. Redirecting to home... <Link href="/"><Button variant="link">Go Home Now</Button></Link></div>;
+    // This case should ideally be handled by UserProvider redirecting to setup if no user.
+    // But as a fallback:
+    return <div className="text-center py-10">User not set up. Please refresh or ensure user setup is complete. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
   
-  if (isLoadingAllBoards && !currentBoardFromStore) { // Still loading all boards AND this specific one isn't in store yet
+  // Show loading if all boards are loading AND we don't have this specific board in the store yet from a previous fetch
+  // AND the SSE hasn't yet confirmed its validity.
+  if (isLoadingAllBoards && !currentBoardFromStore && !isBoardConfirmedValid) {
      return <div className="text-center py-10">Loading board data...</div>;
   }
   
-  if (!currentBoard) { // This currentBoard is the sanitized, memoized version
+  // If the board is not confirmed valid by SSE (e.g. server sent null) AND it's not in the store, then it's likely not found or still loading.
+  // The router.push('/') in the SSE handler will eventually redirect if it was confirmed null after being in store.
+  if (!isBoardConfirmedValid && !currentBoard) { 
       return (
         <div className="text-center py-10">
           Board not found or is being loaded. If this persists, the board may not exist or access is denied.
           <Link href="/"><Button variant="link">Go Home</Button></Link>
         </div>
       );
+  }
+
+  // If we have currentBoard (from store) but SSE hasn't YET confirmed it, we might show it optimistically
+  // but if isBoardConfirmedValid becomes false later (due to SSE null), interactions will be blocked.
+  // This intermediate state allows showing the board if it's in localStorage from a previous session,
+  // while SSE confirms its current validity.
+  if (!currentBoard) { // currentBoard is the fully sanitized one. If this is null, something is wrong with the data structure
+    return (
+      <div className="text-center py-10">
+        Board data is inconsistent or missing critical parts. Trying to sync or redirect...
+        <Link href="/"><Button variant="link">Go Home</Button></Link>
+      </div>
+    );
   }
   
   if (!currentBoard.columns || !currentBoard.cards) {
@@ -359,7 +408,7 @@ export default function BoardPage() {
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isAISuggesting}>
+              <Button variant="outline" disabled={isAISuggesting || !isBoardConfirmedValid}>
                 <Wand2 className="mr-2 h-5 w-5" /> {isAISuggesting ? 'Generating...' : 'Suggest Action Items (AI)'}
               </Button>
             </AlertDialogTrigger>
@@ -372,7 +421,7 @@ export default function BoardPage() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleAISuggestions} disabled={isAISuggesting}>
+                <AlertDialogAction onClick={handleAISuggestions} disabled={isAISuggesting || !isBoardConfirmedValid}>
                   {isAISuggesting ? 'Generating...' : 'Proceed'}
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -408,9 +457,10 @@ export default function BoardPage() {
                 onDeleteCard={handleDeleteCard}
                 onUpvoteCard={handleUpvoteCard}
                 onDragEnd={handleDragEnd}
-                currentUserId={user?.id || ''} // Still needed for RetroCard logic
+                currentUserId={user?.id || ''} 
                 draggedItem={draggedItem}
                 setDraggedItem={setDraggedItem}
+                isBoardConfirmedValid={isBoardConfirmedValid} // Pass down validity
               />
             );
           })}
@@ -420,3 +470,4 @@ export default function BoardPage() {
     </div>
   );
 }
+
