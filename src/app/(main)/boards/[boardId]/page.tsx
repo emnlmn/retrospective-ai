@@ -26,7 +26,7 @@ export default function BoardPage() {
     user: state.user,
     isUserLoading: state.isUserLoading,
     boards: state.boards,
-    isLoadingAllBoards: state.isBoardsLoading,
+    isLoadingAllBoards: state.isBoardsLoading, // This is for the global list, not this specific board
   }));
   const storeActions = useBoardActions();
 
@@ -49,49 +49,42 @@ export default function BoardPage() {
       return;
     }
 
-    console.log(`SSE: Initializing for board ${boardId}.`);
+    // console.log(`SSE: Initializing for board ${boardId}.`);
     const eventSource = new EventSource(`/api/boards/${boardId}/events`);
     let sseConnected = true;
 
     eventSource.onopen = () => {
-      console.log(`SSE: Connection opened for board ${boardId}`);
+      // console.log(`SSE: Connection opened for board ${boardId}`);
       sseConnected = true;
     };
 
     eventSource.addEventListener('boardUpdate', (event) => {
       try {
         const updatedBoardFromServer = JSON.parse(event.data as string) as BoardData | null;
-        // console.log(`SSE: Received boardUpdate for board ${boardId}`, updatedBoardFromServer);
+        const currentBoardIdFromParams = params.boardId as string; // Use current params.boardId
 
-        if (updatedBoardFromServer && updatedBoardFromServer.id === boardId) {
+        // console.log(`SSE: Received boardUpdate for board ${currentBoardIdFromParams}`, updatedBoardFromServer);
+
+        if (updatedBoardFromServer && updatedBoardFromServer.id === currentBoardIdFromParams) {
           storeActions.setBoardFromServer(updatedBoardFromServer);
           setIsBoardConfirmedValid(true);
-        } else if (updatedBoardFromServer === null && boardId === params.boardId) { // Check if null is for THIS board
-          const wasPreviouslyConfirmed = isBoardConfirmedValid;
+        } else if (updatedBoardFromServer === null && currentBoardIdFromParams === boardId) { // Check if null is for THIS board
+          // Server explicitly says THIS board is null.
           setIsBoardConfirmedValid(false); // Board is no longer valid for this session
 
-          if (wasPreviouslyConfirmed) {
-            // If the board was considered valid and now the server says it's null,
-            // it means it was likely deleted while the user was viewing it.
-            const boardStillInClientStore = useBoardStore.getState().boards.find(b => b.id === boardId);
-            if (boardStillInClientStore) storeActions.removeBoardFromServer(boardId); // Clean up client state
-            
+          const boardStillInClientStore = useBoardStore.getState().boards.find(b => b.id === currentBoardIdFromParams);
+          if (boardStillInClientStore) {
+            // If the board was considered valid (or at least known) by the client
+            // and now the server says it's null, it means it was deleted or became inaccessible.
+            storeActions.removeBoardFromServer(currentBoardIdFromParams); // Clean up client state
             toast({ title: "Board Unavailable", description: "This board was deleted or is no longer accessible. Redirecting to home...", variant: "destructive" });
             router.push('/');
           } else {
-            // Board was never confirmed as valid in this session, and server sends null.
+            // Board was NOT in client store, and server says null.
             // This could be an invalid URL, or a new board whose creation event hasn't arrived yet.
             // We don't redirect here; let the UI show "Connecting..." or "Board not found...".
-            // If it's a new board, the actual board data event should arrive shortly.
-            // If it's a truly invalid URL, "Board not found..." will persist.
-            const boardStillInClientStore = useBoardStore.getState().boards.find(b => b.id === boardId);
-             if (boardStillInClientStore) {
-                // It was in client store, but server's initial check (or subsequent one) says null.
-                // This happens for newly created boards where server initial SSE sends null. Don't redirect yet.
-                console.warn(`SSE: Received null for board ${boardId} which was in client store. Waiting for non-null update or session timeout.`);
-             } else {
-                console.warn(`SSE: Received null for board ${boardId}, and it wasn't in client store. Likely an invalid URL or awaiting creation event.`);
-             }
+            // If it's a new board, the actual non-null board data event should arrive shortly from addBoardToDB's emit.
+             console.warn(`SSE: Received null for board ${currentBoardIdFromParams}, and it wasn't in client store. Likely an invalid URL or awaiting its creation event.`);
           }
         }
       } catch (error) {
@@ -102,9 +95,9 @@ export default function BoardPage() {
 
     eventSource.onerror = (error) => {
       console.error(`SSE: EventSource failed for board ${boardId}:`, error);
-      if (sseConnected) {
+      if (sseConnected) { // Only toast if it was previously connected
         const currentBoardExistsInStore = useBoardStore.getState().boards.find(b => b.id === boardId);
-        if (currentBoardExistsInStore) {
+        if (currentBoardExistsInStore) { // Only toast if the user was likely viewing a valid board
             toast({ title: "Connection Issue", description: "Lost real-time connection to the board. Some changes may not appear automatically.", variant: "destructive" });
         }
       }
@@ -114,31 +107,44 @@ export default function BoardPage() {
 
     return () => {
       if (sseConnected) {
-        console.log(`SSE: Closing connection for board ${boardId}`);
+        // console.log(`SSE: Closing connection for board ${boardId}`);
         eventSource.close();
         sseConnected = false;
       }
     };
-  }, [boardId, storeActions, router, toast, params.boardId, isBoardConfirmedValid]); // Added isBoardConfirmedValid to re-evaluate if needed
+  }, [boardId, storeActions, router, toast, params.boardId]); // Removed isBoardConfirmedValid
 
 
   const currentBoardFromStore = useMemo(() => boards.find(b => b.id === boardId), [boards, boardId]);
 
   const currentBoard = useMemo(() => {
     if (!currentBoardFromStore) return null;
+    // Create a deep copy to avoid mutating the store state directly
     const board = JSON.parse(JSON.stringify(currentBoardFromStore)) as BoardData;
+
+    // Ensure cards object exists
     board.cards = board.cards || {};
+
+    // Sanitize columns: ensure all default columns exist and cardIds is an array
     const sanitizedColumns: BoardData['columns'] = {
         wentWell: { ...(board.columns?.wentWell || INITIAL_COLUMNS_DATA.wentWell), id: 'wentWell', title: DEFAULT_COLUMNS_CONFIG.wentWell.title, cardIds: Array.isArray(board.columns?.wentWell?.cardIds) ? [...board.columns.wentWell.cardIds] : [], },
         toImprove: { ...(board.columns?.toImprove || INITIAL_COLUMNS_DATA.toImprove), id: 'toImprove', title: DEFAULT_COLUMNS_CONFIG.toImprove.title, cardIds: Array.isArray(board.columns?.toImprove?.cardIds) ? [...board.columns.toImprove.cardIds] : [], },
         actionItems: { ...(board.columns?.actionItems || INITIAL_COLUMNS_DATA.actionItems), id: 'actionItems', title: DEFAULT_COLUMNS_CONFIG.actionItems.title, cardIds: Array.isArray(board.columns?.actionItems?.cardIds) ? [...board.columns.actionItems.cardIds] : [], },
     };
     board.columns = sanitizedColumns;
+
+    // Filter out orphaned cardIds from columns and ensure card order is set
     (Object.keys(board.columns) as ColumnId[]).forEach(colId => {
         const column = board.columns[colId];
         if (column && Array.isArray(column.cardIds)) {
+          // Filter cardIds that don't exist in board.cards
           column.cardIds = column.cardIds.filter(cardId => board.cards && board.cards[cardId] !== undefined);
-          column.cardIds.forEach((cardId, index) => { if (board.cards && board.cards[cardId]) { board.cards[cardId].order = index; } });
+          // Ensure order property is set for cards in this column
+          column.cardIds.forEach((cardId, index) => {
+            if (board.cards && board.cards[cardId]) {
+              board.cards[cardId].order = index;
+            }
+          });
         }
     });
     return board;
@@ -147,7 +153,7 @@ export default function BoardPage() {
 
   const handleAddCard = useCallback(async (columnId: ColumnId, content: string) => {
     if (!isBoardConfirmedValid) { toast({ title: "Action Denied", description: "Board is not currently available or confirmed valid.", variant: "destructive" }); return; }
-    const boardForAction = useBoardStore.getState().boards.find(b => b.id === boardId);
+    const boardForAction = useBoardStore.getState().boards.find(b => b.id === boardId); // Get latest board state
     if (!boardForAction || !user) { toast({ title: "Cannot Add Card", description: "Board or user data is missing, or board is not fully loaded.", variant: "destructive" }); return; }
     try { await storeActions.addCard(boardForAction.id, columnId, content); }
     catch (error) { console.error("Error in handleAddCard:", error); const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while adding the card."; toast({ title: "Failed to Add Card", description: errorMessage, variant: "destructive" }); }
@@ -212,29 +218,53 @@ export default function BoardPage() {
   }, [toast]);
 
 
-  if (isStoreUserLoading) { return <div className="text-center py-10">Loading user data...</div>; }
-  if (!user) { return <div className="text-center py-10">User not set up. Please refresh or ensure user setup is complete. <Link href="/"><Button variant="link">Go Home</Button></Link></div>; }
+  // --- Rendering Logic ---
+  if (isStoreUserLoading) {
+    return <div className="text-center py-10">Loading user data...</div>;
+  }
+  if (!user) { // Should be caught by UserProvider, but as a safeguard
+    return <div className="text-center py-10">User not set up. Please ensure user setup is complete. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
+  }
 
-  // If the board IS in the client's store, but the server hasn't YET confirmed its validity for THIS session via SSE.
+  // If the board IS in the client's store (currentBoard is populated), but the server hasn't YET confirmed its validity for THIS session.
   if (currentBoard && !isBoardConfirmedValid) {
      return (<div className="text-center py-10">Connecting to board and verifying...<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
   }
-  // If the board isn't in the client's store yet AND the server hasn't confirmed its validity for this session
+
+  // If the board isn't in the client's store yet AND the server hasn't confirmed its validity for this session via SSE.
+  // This covers:
+  // 1. Invalid boardId in URL.
+  // 2. Newly created board, client store hasn't received its data via SSE yet.
   if (!currentBoard && !isBoardConfirmedValid) {
+      // The SSE logic will handle redirection if a board known to client is later confirmed null by server.
+      // Otherwise, this message persists for truly invalid URLs or until SSE populates the new board.
       return (<div className="text-center py-10">Board not found or is being loaded. If this persists, the board may not exist or access is denied.<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
   }
-  // If it IS confirmed valid by the server, but somehow not in the client store
+  
+  // If it IS confirmed valid by the server, but somehow not in the client store (should be rare, implies sync issue)
+  // This could also happen briefly if an SSE `null` event removed the board from store, and `isBoardConfirmedValid` is false,
+  // leading to the condition above, but if for some reason it was confirmed then removed, this is a fallback.
   if (isBoardConfirmedValid && !currentBoard) {
     // This state implies a sync issue or that the board was confirmed then immediately deleted by another event
-    // before Zustand could fully update currentBoard for this render.
+    // before Zustand could fully update currentBoard for this render, OR SSE removed it while confirmed.
+    // The SSE handler should have redirected if it was a server-confirmed deletion of a known board.
     // Showing a "trying to sync" message and allowing SSE to correct is reasonable.
     return (<div className="text-center py-10">Board data is inconsistent. Trying to sync...<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
   }
-  // Final check for currentBoard after all conditions. If it's still null here, it means it genuinely doesn't exist or wasn't loaded.
+
+  // Final check: if currentBoard is still null after all the above, then it's truly not found,
+  // or an edge case where isBoardConfirmedValid is true but currentBoard isn't (should be handled by above).
   if (!currentBoard) {
+     // This implies isBoardConfirmedValid is false, caught by the "!currentBoard && !isBoardConfirmedValid" case.
+     // If it reaches here, something is very off. The previous conditions should cover all states.
+     // For safety, we provide a generic "not found".
      return (<div className="text-center py-10">Board not found.<Link href="/"><Button variant="link">Go Home</Button></Link></div>);
   }
-  if (!currentBoard.columns || !currentBoard.cards) { return <div className="text-center py-10">Board data is incomplete. Trying to sync... <Link href="/"><Button variant="link">Go Home</Button></Link></div>; }
+  
+  if (!currentBoard.columns || !currentBoard.cards) {
+    // This usually means currentBoard exists but is malformed.
+    return <div className="text-center py-10">Board data is incomplete. Trying to sync... <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
+  }
 
 
   const columnIds = Object.keys(DEFAULT_COLUMNS_CONFIG) as ColumnId[];
@@ -283,9 +313,15 @@ export default function BoardPage() {
           {columnIds.map(columnId => {
             const columnConfig = DEFAULT_COLUMNS_CONFIG[columnId];
             const columnData = currentBoard.columns![columnId] || { ...INITIAL_COLUMNS_DATA[columnId], id: columnId, title: columnConfig.title, cardIds: [] };
+            
             const cardIdsForColumn = Array.isArray(columnData.cardIds) ? columnData.cardIds : [];
             const cardsRecord = currentBoard.cards || {};
-            const cardsForColumn = cardIdsForColumn.map(id => cardsRecord[id]).filter((card): card is CardData => !!card && typeof card.order === 'number').sort((a, b) => (a.order as number) - (b.order as number));
+            
+            const cardsForColumn = cardIdsForColumn
+              .map(id => cardsRecord[id])
+              .filter((card): card is CardData => !!card && typeof card.order === 'number') // Ensure card exists and order is a number
+              .sort((a, b) => (a.order as number) - (b.order as number)); // Sort by order
+
             if (!columnConfig) return null;
 
             return (

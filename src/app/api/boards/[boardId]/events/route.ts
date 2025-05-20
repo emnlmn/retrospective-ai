@@ -28,10 +28,9 @@ export async function GET(request: NextRequest, { params }: Context) {
           try {
             const message = `event: boardUpdate\ndata: ${JSON.stringify(updatedBoard)}\n\n`;
             controller.enqueue(new TextEncoder().encode(message));
-            console.log(`SSE: Sent boardUpdate for ${boardId}`, updatedBoard);
+            // console.log(`SSE: Sent boardUpdate for ${boardId}`, updatedBoard ? `(Title: ${updatedBoard.title})` : '(null)');
           } catch (e) {
             console.error(`Error enqueuing SSE message for board ${boardId}:`, e);
-            // Potentially close connection if controller is broken
             try {
               if (controller.desiredSize !== null) controller.close();
             } catch (closeError) {
@@ -39,15 +38,13 @@ export async function GET(request: NextRequest, { params }: Context) {
             }
           }
         } else if (updatedBoard && updatedBoard.id !== boardId) {
-          // This handles a rare case where an event for a different board ID might be caught.
-          // It shouldn't happen with `boardUpdate:${boardId}` but good for robustness.
-          console.log(`SSE: Ignored boardUpdate for ${updatedBoard.id} on connection for ${boardId}`);
+          // console.log(`SSE: Ignored boardUpdate for ${updatedBoard.id} on connection for ${boardId}`);
         }
       };
 
       // Subscribe to specific board updates
       emitter.on(`boardUpdate:${boardId}`, boardUpdateHandler);
-      console.log(`SSE: Subscribed to boardUpdate:${boardId}`);
+      // console.log(`SSE: Subscribed to boardUpdate:${boardId}`);
 
       // Send current state immediately after subscribing.
       // This ensures the client gets the initial status (board data or null if not found).
@@ -57,13 +54,13 @@ export async function GET(request: NextRequest, { params }: Context) {
       request.signal.addEventListener('abort', () => {
         emitter.off(`boardUpdate:${boardId}`, boardUpdateHandler);
         try {
-            if (controller.desiredSize !== null) { 
+            if (controller.desiredSize !== null) {
                 controller.close();
             }
         } catch (e) {
             console.warn(`Error closing SSE controller for board ${boardId} on abort:`, e);
         }
-        console.log(`SSE connection closed for board: ${boardId}`);
+        // console.log(`SSE connection closed for board: ${boardId}`);
       });
     },
   });
@@ -77,4 +74,3 @@ export async function GET(request: NextRequest, { params }: Context) {
     },
   });
 }
-
