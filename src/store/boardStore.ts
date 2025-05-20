@@ -54,12 +54,15 @@ export const useBoardStore = create<BoardState>()(
         },
         loadInitialUserAndBoards: async () => {
           set({ isUserLoading: true });
+          // User is loaded from persisted state by zustand/persist middleware
           const userLoaded = get().user; 
           if (userLoaded) {
-             set({ isUserLoading: false });
+             set({ isUserLoading: false }); // Mark user as loaded
           } else {
+            // If no user in persisted state, still mark as not loading so UI can prompt for setup
             set({ isUserLoading: false });
           }
+          // Fetch boards after user state is confirmed
           await get().actions.fetchBoards();
         },
         fetchBoards: async () => {
@@ -73,7 +76,7 @@ export const useBoardStore = create<BoardState>()(
             set({ boards: boardsData, isBoardsLoading: false });
           } catch (error) {
             console.error("Error fetching boards:", error);
-            set({ isBoardsLoading: false, boards: [] });
+            set({ isBoardsLoading: false, boards: [] }); // Set boards to empty on error
           }
         },
         addBoard: async (title) => {
@@ -89,13 +92,25 @@ export const useBoardStore = create<BoardState>()(
               body: JSON.stringify({ title, userId: user.id, userName: user.name }),
             });
             if (!response.ok) {
-              throw new Error(`Failed to add board: ${response.statusText}`);
+              let errorDetails = response.statusText;
+              try {
+                const errorData = await response.json();
+                errorDetails = errorData.message || JSON.stringify(errorData.errors) || errorDetails;
+              } catch (e) {
+                // If parsing JSON fails, use the original statusText or just the status
+              }
+              throw new Error(`Failed to add board. Status: ${response.status}. Details: ${errorDetails}`);
             }
             const newBoard: BoardData = await response.json();
+            // Instead of local update, rely on SSE or re-fetch if necessary.
+            // For now, we add locally then let SSE confirm or correct if other clients are involved.
+            // Or, for simplicity in single-user-view-immediate-effect:
             set((state) => ({ boards: [newBoard, ...state.boards] }));
+            // A full fetchBoards() could also be an option if SSE is not used for self-updates.
             return newBoard;
           } catch (error) {
             console.error("Error adding board:", error);
+            // Potentially use a toast to show error to user
             return null;
           }
         },
@@ -109,6 +124,7 @@ export const useBoardStore = create<BoardState>()(
         removeBoardFromServer: (boardId) => {
           set(state => ({
             boards: state.boards.filter(b => b.id !== boardId),
+            currentBoardId: state.currentBoardId === boardId ? null : state.currentBoardId,
           }));
         },
         addCard: async (boardId, columnId, content, userNameSuffix = '') => {
@@ -118,7 +134,6 @@ export const useBoardStore = create<BoardState>()(
             return;
           }
           try {
-            // Optimistic update (optional, for perceived speed) could happen here
             const response = await fetch(`/api/boards/${boardId}/cards`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -130,15 +145,22 @@ export const useBoardStore = create<BoardState>()(
               }),
             });
             if (!response.ok) {
-              throw new Error(`Failed to add card: ${response.statusText}`);
+              let errorDetails = response.statusText;
+              try {
+                const errorData = await response.json();
+                errorDetails = errorData.message || JSON.stringify(errorData.errors) || errorDetails;
+              } catch (e) {
+                // If parsing JSON fails, retain original statusText or just use status
+                // This might happen if the error response is not JSON
+              }
+              throw new Error(`Failed to add card. Status: ${response.status}. Details: ${errorDetails}`);
             }
             // API should have emitted an SSE, so the store will be updated via setBoardFromServer
-            // If not relying on SSE for self-updates, uncomment local update logic or fetch board
-            // const newCard: CardData = await response.json();
-            // set(state => { ... local update ... });
+            // No local state update here needed if SSE is working for self-updates
           } catch (error) {
             console.error("Error adding card:", error);
             // Revert optimistic update if implemented
+            // Potentially use a toast to show error to user
           }
         },
         updateCardContent: async (boardId, cardId, newContent) => {
@@ -149,40 +171,59 @@ export const useBoardStore = create<BoardState>()(
               body: JSON.stringify({ content: newContent }),
             });
             if (!response.ok) {
-              throw new Error(`Failed to update card: ${response.statusText}`);
+              let errorDetails = response.statusText;
+              try {
+                const errorData = await response.json();
+                errorDetails = errorData.message || JSON.stringify(errorData.errors) || errorDetails;
+              } catch (e) {
+              }
+              throw new Error(`Failed to update card. Status: ${response.status}. Details: ${errorDetails}`);
             }
             // API emits SSE
           } catch (error) {
             console.error("Error updating card content:", error);
           }
         },
-        deleteCard: async (boardId, columnId, cardId) => {
+        deleteCard: async (boardId, columnId, cardId) => { // columnId is passed but not directly used in this API call
           try {
             const response = await fetch(`/api/boards/${boardId}/cards/${cardId}`, {
               method: 'DELETE',
             });
             if (!response.ok) {
-              throw new Error(`Failed to delete card: ${response.statusText}`);
+              let errorDetails = response.statusText;
+              try {
+                const errorData = await response.json();
+                errorDetails = errorData.message || JSON.stringify(errorData.errors) || errorDetails;
+              } catch (e) {
+              }
+              throw new Error(`Failed to delete card. Status: ${response.status}. Details: ${errorDetails}`);
             }
             // API emits SSE
           } catch (error) {
             console.error("Error deleting card:", error);
           }
         },
-        upvoteCard: async (boardId, cardId, userId) => {
+        upvoteCard: async (boardId, cardId, userIdToUpvote) => { // Renamed userId to userIdToUpvote for clarity
           const user = get().user;
           if (!user) {
             console.error("User not set, cannot upvote card");
             return;
           }
           try {
+            // The API expects the ID of the user performing the upvote in the body
             const response = await fetch(`/api/boards/${boardId}/cards/${cardId}/upvote`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: user.id }),
+              body: JSON.stringify({ userId: user.id }), // Send current user's ID
             });
             if (!response.ok) {
-              throw new Error(`Failed to upvote card: ${response.statusText}`);
+              let errorDetails = response.statusText;
+              try {
+                const errorData = await response.json();
+                errorDetails = errorData.message || JSON.stringify(errorData.errors) || errorDetails;
+              } catch (e) {
+              }
+              throw new Error(`Failed to upvote card. Status: ${response.status}. Details: ${errorDetails}`);
             }
             // API emits SSE
           } catch (error) {
@@ -203,18 +244,16 @@ export const useBoardStore = create<BoardState>()(
               }),
             });
             if (!response.ok) {
-              const errorBody = await response.text();
-              throw new Error(`Failed to move card: ${response.statusText}. Body: ${errorBody}`);
+              let errorDetails = response.statusText;
+              try {
+                const errorData = await response.json(); // Try to parse error response as JSON
+                errorDetails = errorData.message || JSON.stringify(errorData.errors) || errorDetails;
+              } catch (e) {
+                // If response is not JSON or parsing fails, errorDetails remains statusText
+              }
+              throw new Error(`Failed to move card. Status: ${response.status}. Details: ${errorDetails}`);
             }
-            // API emits SSE, which will update the board state.
-            // const updatedBoard: BoardData = await response.json();
-            // set(state => {
-            //   const boardIndex = state.boards.findIndex(b => b.id === boardId);
-            //   if (boardIndex === -1) return state; 
-            //   const boardsCopy = [...state.boards];
-            //   boardsCopy[boardIndex] = updatedBoard; 
-            //   return { boards: boardsCopy };
-            // });
+            // API emits SSE
           } catch (error) {
             console.error("Error moving card:", error);
           }
@@ -231,8 +270,11 @@ export const useBoardStore = create<BoardState>()(
             console.error('Failed to rehydrate state from localStorage:', error)
           }
           if (state) {
-            state.isUserLoading = false;
-            // loadInitialUserAndBoards will be called from UserProvider
+            state.isUserLoading = false; // Initial user state is now loaded (or confirmed null)
+            // loadInitialUserAndBoards will be called from UserProvider to fetch actual board data
+          } else {
+            // If state is null (e.g. first time load or corrupted storage), ensure loading is false
+            set({ isUserLoading: false, user: null });
           }
         }
       }
@@ -242,3 +284,11 @@ export const useBoardStore = create<BoardState>()(
 
 // Hook to easily access actions
 export const useBoardActions = () => useBoardStore((state) => state.actions);
+
+// Selector to get current board if needed directly (though usually passed as prop or derived in component)
+// export const useCurrentBoard = () => {
+//   const boards = useBoardStore((state) => state.boards);
+//   const currentBoardId = useBoardStore((state) => state.currentBoardId);
+//   if (!currentBoardId) return undefined;
+//   return boards.find(b => b.id === currentBoardId);
+// };
