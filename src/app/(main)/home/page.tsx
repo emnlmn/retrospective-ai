@@ -61,6 +61,9 @@ export default function HomePage() {
     );
   }
 
+  // Filter boards to ensure they are valid objects with an ID before sorting and mapping
+  const validBoards = boards.filter(board => board && typeof board === 'object' && board.id);
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -70,7 +73,7 @@ export default function HomePage() {
         </Button>
       </div>
 
-      {boards.length === 0 ? (
+      {validBoards.length === 0 ? (
         <Card className="text-center py-10 shadow-lg bg-card border border-border">
           <CardHeader>
             <CardTitle className="text-2xl text-muted-foreground">No Boards Yet!</CardTitle>
@@ -84,9 +87,10 @@ export default function HomePage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {boards.sort((a,b) => {
-            const dateA = new Date(a.createdAt || 0).getTime();
-            const dateB = new Date(b.createdAt || 0).getTime();
+          {validBoards.sort((a,b) => {
+            // Ensure a and b are valid objects before accessing createdAt
+            const dateA = new Date(a?.createdAt || 0).getTime();
+            const dateB = new Date(b?.createdAt || 0).getTime();
             if (isNaN(dateA)) return 1; // push invalid dates to the end
             if (isNaN(dateB)) return -1;
             return dateB - dateA;
@@ -118,8 +122,8 @@ export default function HomePage() {
       <CreateBoardDialog
         isOpen={isCreateBoardDialogOpen}
         onClose={() => setIsCreateBoardDialogOpen(false)}
-        onBoardCreated={(title: string) => { // Expect title string
-          const newBoard: BoardData = {     // Create BoardData object here
+        onBoardCreated={(title: string) => { 
+          const newBoard: BoardData = {     
             id: uuidv4(),
             title,
             columns: JSON.parse(JSON.stringify(INITIAL_COLUMNS_DATA)),
