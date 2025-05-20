@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { updateCardInDB, deleteCardFromDB, getBoardById } from '@/lib/in-memory-db';
 import { z } from 'zod';
 import type { ColumnId } from '@/lib/types';
-
+// Emitter is handled within updateCardInDB and deleteCardFromDB
 
 interface Context {
   params: {
@@ -39,10 +39,9 @@ export async function PUT(request: NextRequest, { params }: Context) {
     }
     
     const { content } = validation.data;
-    const updatedCard = updateCardInDB(boardId, cardId, content);
+    const updatedCard = updateCardInDB(boardId, cardId, content); // This will emit event
 
     if (!updatedCard) {
-      // Should be caught by earlier checks, but for safety
       return NextResponse.json({ message: 'Failed to update card, card or board not found' }, { status: 404 });
     }
     return NextResponse.json(updatedCard);
@@ -70,7 +69,6 @@ export async function DELETE(request: NextRequest, { params }: Context) {
       return NextResponse.json({ message: 'Card not found on this board' }, { status: 404 });
     }
     
-    // Find the column the card belongs to, to pass to deleteCardFromDB
     let columnIdToDeleteFrom: ColumnId | null = null;
     for (const colId of Object.keys(board.columns) as ColumnId[]) {
         if (board.columns[colId].cardIds.includes(cardId)) {
@@ -80,14 +78,12 @@ export async function DELETE(request: NextRequest, { params }: Context) {
     }
 
     if (!columnIdToDeleteFrom) {
-        // Should not happen if card exists in board.cards and board structure is consistent
         console.error(`Card ${cardId} found in board.cards but not in any column.cardsIds for board ${boardId}`);
         return NextResponse.json({ message: 'Card data inconsistency, cannot determine column' }, { status: 500 });
     }
 
-    const deleted = deleteCardFromDB(boardId, columnIdToDeleteFrom, cardId);
+    const deleted = deleteCardFromDB(boardId, columnIdToDeleteFrom, cardId); // This will emit event
     if (!deleted) {
-      // This might indicate an internal issue or the card was already deleted by a concurrent request.
       return NextResponse.json({ message: 'Card not found or could not be deleted' }, { status: 404 });
     }
     return NextResponse.json({ message: 'Card deleted successfully' });

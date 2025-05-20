@@ -2,6 +2,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { upvoteCardInDB, getBoardById } from '@/lib/in-memory-db';
 import { z } from 'zod';
+// Emitter is handled within upvoteCardInDB
 
 interface Context {
   params: {
@@ -36,10 +37,9 @@ export async function POST(request: NextRequest, { params }: Context) {
     }
 
     const { userId } = validation.data;
-    const updatedCard = upvoteCardInDB(boardId, cardId, userId);
+    const updatedCard = upvoteCardInDB(boardId, cardId, userId); // This will emit event
 
     if (!updatedCard) {
-      // Should be caught by earlier checks
       return NextResponse.json({ message: 'Failed to upvote card, card or board not found' }, { status: 404 });
     }
     return NextResponse.json(updatedCard);

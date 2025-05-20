@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { addCardToDB, getBoardById } from '@/lib/in-memory-db';
 import type { ColumnId } from '@/lib/types';
 import { z } from 'zod';
+// Emitter is called within addCardToDB
 
 interface Context {
   params: {
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       return NextResponse.json({ message: 'Board ID is required' }, { status: 400 });
     }
 
-    const boardExists = getBoardById(boardId);
+    const boardExists = getBoardById(boardId); // Check if board exists before adding card
     if (!boardExists) {
       return NextResponse.json({ message: 'Board not found' }, { status: 404 });
     }
@@ -37,10 +38,9 @@ export async function POST(request: NextRequest, { params }: Context) {
     }
 
     const { content, columnId, userId, userName } = validation.data;
-    const newCard = addCardToDB(boardId, columnId, content, userId, userName);
+    const newCard = addCardToDB(boardId, columnId, content, userId, userName); // This will emit event
 
     if (!newCard) {
-      // This case might be redundant if getBoardById check is robust, but good for safety.
       return NextResponse.json({ message: 'Failed to create card, board might not exist or column invalid' }, { status: 500 });
     }
     return NextResponse.json(newCard, { status: 201 });

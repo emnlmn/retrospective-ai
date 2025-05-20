@@ -2,6 +2,7 @@
 import type { BoardData, CardData, ColumnId, User } from '@/lib/types';
 import { INITIAL_COLUMNS_DATA } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
+import emitter from '@/lib/event-emitter';
 
 // In-memory store
 let boards: BoardData[] = [];
@@ -29,13 +30,25 @@ export function addBoardToDB(title: string, userId: string, userName: string): B
     // userName,
   };
   boards.unshift(newBoard); // Add to the beginning like current store
+  // Note: For 'addBoardToDB', emitting an event for all clients to refresh their list of boards
+  // is more complex as it's not tied to a specific boardId for SSE.
+  // A general 'boardsListUpdated' event could be used if a global SSE channel existed.
+  // For now, individual board updates are prioritized.
   return JSON.parse(JSON.stringify(newBoard));
 }
 
 export function deleteBoardFromDB(boardId: string): boolean {
   const initialLength = boards.length;
   boards = boards.filter(b => b.id !== boardId);
-  return boards.length < initialLength;
+  const deleted = boards.length < initialLength;
+  if (deleted) {
+    // Emit a generic event or handle differently, as the board SSE channel will be gone.
+    // Perhaps clients subscribed to a list of boards could be notified.
+    // For simplicity, we'll just log this. A more complex system might emit `boardDeleted:${boardId}`.
+    console.log(`Board ${boardId} deleted. SSE listeners for this board will no longer receive updates.`);
+    emitter.emit(`boardUpdate:${boardId}`, null); // Signal deletion with null
+  }
+  return deleted;
 }
 
 // --- Card Operations ---
@@ -64,6 +77,10 @@ export function addCardToDB(boardId: string, columnId: ColumnId, content: string
       board.cards[cardId].order = index;
     }
   });
+  
+  const updatedBoard = getBoardById(boardId);
+  if (updatedBoard) emitter.emit(`boardUpdate:${boardId}`, updatedBoard);
+  
   return JSON.parse(JSON.stringify(newCard));
 }
 
@@ -72,6 +89,10 @@ export function updateCardInDB(boardId: string, cardId: string, newContent: stri
   if (!board || !board.cards[cardId]) return null;
 
   board.cards[cardId].content = newContent;
+
+  const updatedBoard = getBoardById(boardId);
+  if (updatedBoard) emitter.emit(`boardUpdate:${boardId}`, updatedBoard);
+
   return JSON.parse(JSON.stringify(board.cards[cardId]));
 }
 
@@ -88,6 +109,9 @@ export function deleteCardFromDB(boardId: string, columnId: ColumnId, cardId: st
       board.cards[cid].order = index;
     }
   });
+
+  const updatedBoard = getBoardById(boardId);
+  if (updatedBoard) emitter.emit(`boardUpdate:${boardId}`, updatedBoard);
   return true;
 }
 
@@ -102,6 +126,10 @@ export function upvoteCardInDB(boardId: string, cardId: string, userId: string):
   } else {
     card.upvotes.push(userId);
   }
+
+  const updatedBoard = getBoardById(boardId);
+  if (updatedBoard) emitter.emit(`boardUpdate:${boardId}`, updatedBoard);
+
   return JSON.parse(JSON.stringify(card));
 }
 
@@ -113,9 +141,12 @@ export function moveCardInDB(
   destinationIndex: number,
   mergeTargetCardId?: string
 ): BoardData | null {
-  const board = boards.find(b => b.id === boardId);
-  if (!board) return null;
+  const boardIndex = boards.findIndex(b => b.id === boardId);
+  if (boardIndex === -1) return null;
 
+  // Operate on a mutable copy for internal logic, then emit the updated state
+  const board = boards[boardIndex];
+  
   const draggedCard = board.cards[draggedCardId];
   if (!draggedCard) return null;
 
@@ -126,6 +157,10 @@ export function moveCardInDB(
 
     targetCard.content = `${targetCard.content}\n----\n${draggedCard.content}`;
     // Consider merging upvotes or other properties if necessary
+    // Combine upvotes, ensuring uniqueness
+    const combinedUpvotes = new Set([...targetCard.upvotes, ...draggedCard.upvotes]);
+    targetCard.upvotes = Array.from(combinedUpvotes);
+
     delete board.cards[draggedCardId];
     board.columns[sourceColumnId].cardIds = board.columns[sourceColumnId].cardIds.filter(id => id !== draggedCardId);
   } else {
@@ -155,7 +190,15 @@ export function moveCardInDB(
     });
   });
   
-  return JSON.parse(JSON.stringify(board));
+  const updatedBoard = getBoardById(boardId); // Get a fresh clone
+  if (updatedBoard) {
+    // boards[boardIndex] = updatedBoard; // This line caused a bug, getBoardById already returns a clone
+                                      // The direct mutation to 'board' above is sufficient for in-memory.
+                                      // The important part is emitting the *cloned* updated board.
+    emitter.emit(`boardUpdate:${boardId}`, updatedBoard);
+    return updatedBoard; // Return the cloned, updated board
+  }
+  return null;
 }
 
 // Utility to reset the DB for testing if needed (not for production)

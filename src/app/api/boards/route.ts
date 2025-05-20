@@ -2,6 +2,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getAllBoards, addBoardToDB } from '@/lib/in-memory-db';
 import { z } from 'zod';
+// No emitter needed here directly, as addBoardToDB might not trigger specific boardId events
+// unless we also emit a general "boardsListUpdated" event for all clients.
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,10 +32,11 @@ export async function POST(request: NextRequest) {
 
     const { title, userId, userName } = validation.data;
     const newBoard = addBoardToDB(title, userId, userName);
+    // Note: addBoardToDB itself doesn't emit a specific boardUpdate event.
+    // A global 'boardsListUpdated' event could be emitted here if desired.
     return NextResponse.json(newBoard, { status: 201 });
   } catch (error) {
     console.error('Failed to create board:', error);
-    // Check if error is due to JSON parsing
     if (error instanceof SyntaxError) {
         return NextResponse.json({ message: 'Invalid JSON in request body' }, { status: 400 });
     }

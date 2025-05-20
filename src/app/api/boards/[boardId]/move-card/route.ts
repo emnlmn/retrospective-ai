@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { moveCardInDB, getBoardById } from '@/lib/in-memory-db';
 import type { ColumnId } from '@/lib/types';
 import { z } from 'zod';
+// Emitter is handled within moveCardInDB
 
 interface Context {
   params: {
@@ -14,7 +15,7 @@ const MoveCardSchema = z.object({
   draggedCardId: z.string().min(1),
   sourceColumnId: z.enum(['wentWell', 'toImprove', 'actionItems']),
   destColumnId: z.enum(['wentWell', 'toImprove', 'actionItems']),
-  destinationIndex: z.number().int(), // -1 can signify merge
+  destinationIndex: z.number().int(), 
   mergeTargetCardId: z.string().optional(),
 });
 
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       mergeTargetCardId,
     } = validation.data;
 
-    const updatedBoard = moveCardInDB(
+    const updatedBoard = moveCardInDB( // This will emit event
       boardId,
       draggedCardId,
       sourceColumnId,

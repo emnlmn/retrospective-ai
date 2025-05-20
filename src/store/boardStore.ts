@@ -14,12 +14,14 @@ interface BoardState {
   actions: {
     // User actions
     setUser: (name: string) => void;
-    loadInitialUserAndBoards: () => Promise<void>; // Renamed and made async
+    loadInitialUserAndBoards: () => Promise<void>;
     // Board actions
     fetchBoards: () => Promise<void>;
     addBoard: (title: string) => Promise<BoardData | null>;
     setCurrentBoardId: (boardId: string | null) => void;
-    getBoardById: (boardId: string) => BoardData | undefined; // Remains sync, operates on local state
+    getBoardById: (boardId: string) => BoardData | undefined;
+    setBoardFromServer: (updatedBoard: BoardData) => void; // For SSE updates
+    removeBoardFromServer: (boardId: string) => void; // For SSE board deletion
     // Card actions
     addCard: (boardId: string, columnId: ColumnId, content: string, userNameSuffix?: string) => Promise<void>;
     updateCardContent: (boardId: string, cardId: string, newContent: string) => Promise<void>;
@@ -49,19 +51,16 @@ export const useBoardStore = create<BoardState>()(
           const currentUser = get().user;
           const newUser = { id: currentUser?.id || uuidv4(), name };
           set({ user: newUser, isUserLoading: false });
-          // No backend call for user creation/update in this iteration
         },
         loadInitialUserAndBoards: async () => {
           set({ isUserLoading: true });
-          // User is loaded by persist middleware from localStorage
           const userLoaded = get().user; 
           if (userLoaded) {
              set({ isUserLoading: false });
           } else {
-            // If user is not in localStorage, UserSetupDialog will prompt
-            set({ isUserLoading: false }); // Still set to false, dialog handles it
+            set({ isUserLoading: false });
           }
-          await get().actions.fetchBoards(); // Fetch boards after user is potentially available
+          await get().actions.fetchBoards();
         },
         fetchBoards: async () => {
           set({ isBoardsLoading: true });
@@ -74,7 +73,7 @@ export const useBoardStore = create<BoardState>()(
             set({ boards: boardsData, isBoardsLoading: false });
           } catch (error) {
             console.error("Error fetching boards:", error);
-            set({ isBoardsLoading: false, boards: [] }); // Set to empty on error or handle as needed
+            set({ isBoardsLoading: false, boards: [] });
           }
         },
         addBoard: async (title) => {
@@ -102,7 +101,16 @@ export const useBoardStore = create<BoardState>()(
         },
         setCurrentBoardId: (boardId) => set({ currentBoardId: boardId }),
         getBoardById: (boardId) => get().boards.find(b => b.id === boardId),
-
+        setBoardFromServer: (updatedBoard) => {
+          set(state => ({
+            boards: state.boards.map(b => b.id === updatedBoard.id ? updatedBoard : b),
+          }));
+        },
+        removeBoardFromServer: (boardId) => {
+          set(state => ({
+            boards: state.boards.filter(b => b.id !== boardId),
+          }));
+        },
         addCard: async (boardId, columnId, content, userNameSuffix = '') => {
           const user = get().user;
           if (!user) {
@@ -110,6 +118,7 @@ export const useBoardStore = create<BoardState>()(
             return;
           }
           try {
+            // Optimistic update (optional, for perceived speed) could happen here
             const response = await fetch(`/api/boards/${boardId}/cards`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -123,35 +132,13 @@ export const useBoardStore = create<BoardState>()(
             if (!response.ok) {
               throw new Error(`Failed to add card: ${response.statusText}`);
             }
-            const newCard: CardData = await response.json();
-            // Instead of just adding, we might need to re-fetch the board or update more carefully
-            // For now, let's find the board and update it locally.
-            // A better approach might be for the API to return the updated board.
-            set(state => {
-              const boardIndex = state.boards.findIndex(b => b.id === boardId);
-              if (boardIndex === -1) return state;
-              const boardsCopy = [...state.boards];
-              const boardToUpdate = { ...boardsCopy[boardIndex] };
-              boardToUpdate.cards = { ...boardToUpdate.cards, [newCard.id]: newCard };
-              boardToUpdate.columns = {
-                ...boardToUpdate.columns,
-                [columnId]: {
-                  ...boardToUpdate.columns[columnId],
-                  cardIds: [newCard.id, ...boardToUpdate.columns[columnId].cardIds]
-                }
-              };
-              // Re-order cards in the affected column
-              boardToUpdate.columns[columnId].cardIds.forEach((cardId, index) => {
-                  if (boardToUpdate.cards[cardId]) {
-                      boardToUpdate.cards[cardId] = { ...boardToUpdate.cards[cardId], order: index };
-                  }
-              });
-              boardsCopy[boardIndex] = boardToUpdate;
-              return { boards: boardsCopy };
-            });
-
+            // API should have emitted an SSE, so the store will be updated via setBoardFromServer
+            // If not relying on SSE for self-updates, uncomment local update logic or fetch board
+            // const newCard: CardData = await response.json();
+            // set(state => { ... local update ... });
           } catch (error) {
             console.error("Error adding card:", error);
+            // Revert optimistic update if implemented
           }
         },
         updateCardContent: async (boardId, cardId, newContent) => {
@@ -164,16 +151,7 @@ export const useBoardStore = create<BoardState>()(
             if (!response.ok) {
               throw new Error(`Failed to update card: ${response.statusText}`);
             }
-            const updatedCard: CardData = await response.json();
-            set(state => {
-              const boardIndex = state.boards.findIndex(b => b.id === boardId);
-              if (boardIndex === -1) return state;
-              const boardsCopy = [...state.boards];
-              const boardToUpdate = { ...boardsCopy[boardIndex] };
-              boardToUpdate.cards = { ...boardToUpdate.cards, [cardId]: updatedCard };
-              boardsCopy[boardIndex] = boardToUpdate;
-              return { boards: boardsCopy };
-            });
+            // API emits SSE
           } catch (error) {
             console.error("Error updating card content:", error);
           }
@@ -186,32 +164,7 @@ export const useBoardStore = create<BoardState>()(
             if (!response.ok) {
               throw new Error(`Failed to delete card: ${response.statusText}`);
             }
-            // API returns success message, update local state
-            set(state => {
-              const boardIndex = state.boards.findIndex(b => b.id === boardId);
-              if (boardIndex === -1) return state;
-              
-              const boardsCopy = [...state.boards];
-              const boardToUpdate = { ...boardsCopy[boardIndex] };
-              boardToUpdate.cards = { ...boardToUpdate.cards };
-              delete boardToUpdate.cards[cardId];
-              
-              boardToUpdate.columns = {
-                ...boardToUpdate.columns,
-                [columnId]: {
-                  ...boardToUpdate.columns[columnId],
-                  cardIds: boardToUpdate.columns[columnId].cardIds.filter(id => id !== cardId)
-                }
-              };
-               // Re-order cards in the affected column
-              boardToUpdate.columns[columnId].cardIds.forEach((cid, index) => {
-                  if (boardToUpdate.cards[cid]) {
-                      boardToUpdate.cards[cid] = { ...boardToUpdate.cards[cid], order: index };
-                  }
-              });
-              boardsCopy[boardIndex] = boardToUpdate;
-              return { boards: boardsCopy };
-            });
+            // API emits SSE
           } catch (error) {
             console.error("Error deleting card:", error);
           }
@@ -226,21 +179,12 @@ export const useBoardStore = create<BoardState>()(
             const response = await fetch(`/api/boards/${boardId}/cards/${cardId}/upvote`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: user.id }), // Send current user's ID
+              body: JSON.stringify({ userId: user.id }),
             });
             if (!response.ok) {
               throw new Error(`Failed to upvote card: ${response.statusText}`);
             }
-            const updatedCard: CardData = await response.json();
-            set(state => {
-              const boardIndex = state.boards.findIndex(b => b.id === boardId);
-              if (boardIndex === -1) return state;
-              const boardsCopy = [...state.boards];
-              const boardToUpdate = { ...boardsCopy[boardIndex] };
-              boardToUpdate.cards = { ...boardToUpdate.cards, [cardId]: updatedCard };
-              boardsCopy[boardIndex] = boardToUpdate;
-              return { boards: boardsCopy };
-            });
+            // API emits SSE
           } catch (error) {
             console.error("Error upvoting card:", error);
           }
@@ -262,14 +206,15 @@ export const useBoardStore = create<BoardState>()(
               const errorBody = await response.text();
               throw new Error(`Failed to move card: ${response.statusText}. Body: ${errorBody}`);
             }
-            const updatedBoard: BoardData = await response.json();
-            set(state => {
-              const boardIndex = state.boards.findIndex(b => b.id === boardId);
-              if (boardIndex === -1) return state; // Should not happen if API returns board
-              const boardsCopy = [...state.boards];
-              boardsCopy[boardIndex] = updatedBoard; // Replace the entire board with the updated one from API
-              return { boards: boardsCopy };
-            });
+            // API emits SSE, which will update the board state.
+            // const updatedBoard: BoardData = await response.json();
+            // set(state => {
+            //   const boardIndex = state.boards.findIndex(b => b.id === boardId);
+            //   if (boardIndex === -1) return state; 
+            //   const boardsCopy = [...state.boards];
+            //   boardsCopy[boardIndex] = updatedBoard; 
+            //   return { boards: boardsCopy };
+            // });
           } catch (error) {
             console.error("Error moving card:", error);
           }
@@ -279,17 +224,15 @@ export const useBoardStore = create<BoardState>()(
     {
       name: 'retrospective-app-storage',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ user: state.user }), // Only persist user, boards will be fetched
-      onRehydrateStorage: (state) => {
-        // This is called when Zustand has rehydrated from localStorage
-        // We can trigger the initial board fetch here if user exists.
-        // However, loadInitialUserAndBoards is now called from UserProvider
-        return (nextState, error) => {
+      partialize: (state) => ({ user: state.user, currentBoardId: state.currentBoardId }), // Persist user and currentBoardId
+      onRehydrateStorage: () => {
+        return (state, error) => {
           if (error) {
             console.error('Failed to rehydrate state from localStorage:', error)
           }
-          if (nextState) {
-            nextState.isUserLoading = false; // User state is loaded (or null if not present)
+          if (state) {
+            state.isUserLoading = false;
+            // loadInitialUserAndBoards will be called from UserProvider
           }
         }
       }
@@ -297,4 +240,5 @@ export const useBoardStore = create<BoardState>()(
   )
 );
 
+// Hook to easily access actions
 export const useBoardActions = () => useBoardStore((state) => state.actions);

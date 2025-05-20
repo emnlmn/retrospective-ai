@@ -1,6 +1,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { getBoardById, deleteBoardFromDB } from '@/lib/in-memory-db';
+// Emitter is handled within deleteBoardFromDB
 
 interface Context {
   params: {
@@ -31,7 +32,7 @@ export async function DELETE(request: NextRequest, { params }: Context) {
     if (!boardId) {
       return NextResponse.json({ message: 'Board ID is required' }, { status: 400 });
     }
-    const deleted = deleteBoardFromDB(boardId);
+    const deleted = deleteBoardFromDB(boardId); // This will emit boardUpdate:${boardId} with null
     if (!deleted) {
       return NextResponse.json({ message: 'Board not found or could not be deleted' }, { status: 404 });
     }
@@ -41,6 +42,3 @@ export async function DELETE(request: NextRequest, { params }: Context) {
     return NextResponse.json({ message: 'Failed to delete board' }, { status: 500 });
   }
 }
-
-// PUT for updating board title could be added here if needed
-// For now, board title is set at creation and not updated.
