@@ -21,8 +21,8 @@ export async function GET(request: NextRequest, { params }: Context) {
 
   const stream = new ReadableStream({
     start(controller) {
-      const boardUpdateHandler = (updatedBoard: BoardData) => {
-        if (updatedBoard.id === boardId) {
+      const boardUpdateHandler = (updatedBoard: BoardData | null) => { // Allow null for deletion
+        if (updatedBoard === null || updatedBoard.id === boardId) { // Check if updatedBoard is null or matches boardId
           try {
             const message = `event: boardUpdate\ndata: ${JSON.stringify(updatedBoard)}\n\n`;
             controller.enqueue(new TextEncoder().encode(message));
@@ -33,7 +33,6 @@ export async function GET(request: NextRequest, { params }: Context) {
         }
       };
 
-      // Send initial board state (optional, but good for immediate sync)
       const initialBoard = getBoardById(boardId);
       if (initialBoard) {
         try {
@@ -43,11 +42,15 @@ export async function GET(request: NextRequest, { params }: Context) {
             console.error("Error sending initial board state:", e);
         }
       } else {
-         // If board doesn't exist, maybe send an error event or just close
-         console.warn(`SSE connection for non-existent board: ${boardId}`);
-         // controller.enqueue(new TextEncoder().encode(`event: error\ndata: {"message": "Board not found"}\n\n`));
-         // controller.close(); 
-         // return;
+         // If board doesn't exist, explicitly send a null update
+         console.warn(`SSE connection for non-existent board: ${boardId}. Sending null update.`);
+         try {
+            const message = `event: boardUpdate\ndata: ${JSON.stringify(null)}\n\n`;
+            controller.enqueue(new TextEncoder().encode(message));
+         } catch (e) {
+            console.error("Error sending null board state for non-existent board:", e);
+         }
+         // No need to close controller here, client will handle the null update and potentially navigate away.
       }
       
       emitter.on(`boardUpdate:${boardId}`, boardUpdateHandler);
@@ -89,3 +92,4 @@ export async function GET(request: NextRequest, { params }: Context) {
     },
   });
 }
+

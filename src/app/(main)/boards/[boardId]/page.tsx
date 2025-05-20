@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'next';
 import { useParams, useRouter } from 'next/navigation';
 import type { BoardData, CardData, ColumnData, ColumnId } from '@/lib/types';
 import { DEFAULT_COLUMNS_CONFIG, INITIAL_COLUMNS_DATA } from '@/lib/types';
@@ -60,8 +60,8 @@ export default function BoardPage() {
         if (updatedBoardFromServer) {
           storeActions.setBoardFromServer(updatedBoardFromServer);
         } else if (updatedBoardFromServer === null) {
-          // Board was deleted
-          toast({ title: "Board Deleted", description: "This board has been deleted by another user.", variant: "destructive" });
+          // Board was deleted or not found on server
+          toast({ title: "Board Unavailable", description: "This board may have been deleted or is no longer accessible.", variant: "destructive" });
           storeActions.removeBoardFromServer(boardId);
           router.push('/'); // Redirect to home
         }
@@ -73,6 +73,7 @@ export default function BoardPage() {
     eventSource.onerror = (error) => {
       console.error('EventSource failed:', error);
       // Potentially close and try to reconnect, or notify user
+      toast({ title: "Connection Issue", description: "Lost real-time connection to the board.", variant: "destructive" });
       eventSource.close();
     };
 
@@ -130,25 +131,49 @@ export default function BoardPage() {
   }, [currentBoardFromStore]);
 
 
-  const handleAddCard = useCallback((columnId: ColumnId, content: string) => {
-    if (!currentBoard || !user) return;
-    storeActions.addCard(currentBoard.id, columnId, content);
-  }, [currentBoard, user, storeActions]);
+  const handleAddCard = useCallback(async (columnId: ColumnId, content: string) => {
+    if (!currentBoard || !user) {
+        toast({ title: "Cannot Add Card", description: "Board or user data is missing.", variant: "destructive" });
+        return;
+    }
+    try {
+        await storeActions.addCard(currentBoard.id, columnId, content);
+        // SSE will update the state
+    } catch (error) {
+        console.error("Error in handleAddCard:", error);
+        toast({ title: "Failed to Add Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+    }
+  }, [currentBoard, user, storeActions, toast]);
 
-  const handleUpdateCard = useCallback((cardId: string, newContent: string) => {
+  const handleUpdateCard = useCallback(async (cardId: string, newContent: string) => {
     if (!currentBoard) return;
-    storeActions.updateCardContent(currentBoard.id, cardId, newContent);
-  }, [currentBoard, storeActions]);
+    try {
+        await storeActions.updateCardContent(currentBoard.id, cardId, newContent);
+    } catch (error) {
+        console.error("Error in handleUpdateCard:", error);
+        toast({ title: "Failed to Update Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+    }
+  }, [currentBoard, storeActions, toast]);
 
-  const handleDeleteCard = useCallback((cardId: string, columnId: ColumnId) => {
+  const handleDeleteCard = useCallback(async (cardId: string, columnId: ColumnId) => {
     if (!currentBoard) return;
-    storeActions.deleteCard(currentBoard.id, columnId, cardId);
-  }, [currentBoard, storeActions]);
+     try {
+        await storeActions.deleteCard(currentBoard.id, columnId, cardId);
+    } catch (error) {
+        console.error("Error in handleDeleteCard:", error);
+        toast({ title: "Failed to Delete Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+    }
+  }, [currentBoard, storeActions, toast]);
 
-  const handleUpvoteCard = useCallback((cardId: string) => {
+  const handleUpvoteCard = useCallback(async (cardId: string) => {
     if (!currentBoard || !user) return;
-    storeActions.upvoteCard(currentBoard.id, cardId, user.id);
-  }, [currentBoard, user, storeActions]);
+    try {
+        await storeActions.upvoteCard(currentBoard.id, cardId, user.id);
+    } catch (error) {
+        console.error("Error in handleUpvoteCard:", error);
+        toast({ title: "Failed to Upvote Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+    }
+  }, [currentBoard, user, storeActions, toast]);
 
   const handleDragEnd = useCallback(async (
     draggedCardId: string, 
@@ -160,24 +185,32 @@ export default function BoardPage() {
     if (!currentBoard) {
       console.error("Board not found, cannot process drag.");
       setDraggedItem(null);
+      toast({ title: "Drag Error", description: "Board data is not available.", variant: "destructive" });
       return;
     }
     if (!currentBoard.cards || !currentBoard.cards[draggedCardId]) {
       console.error("Dragged card is missing from board cards record or board.cards is undefined.");
       setDraggedItem(null);
+      toast({ title: "Drag Error", description: "Dragged card data is missing.", variant: "destructive" });
       return;
     }
   
-    await storeActions.moveCard(
-      currentBoard.id,
-      draggedCardId,
-      sourceColumnId,
-      destColumnId,
-      destinationIndexInDropTarget,
-      mergeTargetCardId
-    );
-    setDraggedItem(null); 
-  }, [currentBoard, storeActions]);
+    try {
+        await storeActions.moveCard(
+          currentBoard.id,
+          draggedCardId,
+          sourceColumnId,
+          destColumnId,
+          destinationIndexInDropTarget,
+          mergeTargetCardId
+        );
+    } catch (error) {
+        console.error("Error in handleDragEnd:", error);
+        toast({ title: "Failed to Move Card", description: error instanceof Error ? error.message : "An unknown error occurred.", variant: "destructive" });
+    } finally {
+        setDraggedItem(null); 
+    }
+  }, [currentBoard, storeActions, toast]);
 
 
   const handleAISuggestions = useCallback(async () => {
@@ -203,8 +236,6 @@ export default function BoardPage() {
       const result = await suggestActionItems(input);
       
       if (result.actionItems && result.actionItems.length > 0) {
-        // Use a loop with await to ensure cards are added one by one if order matters
-        // or if there's a desire to see them appear sequentially (though API calls will be parallel)
         for (const itemContent of result.actionItems) {
           await storeActions.addCard(currentBoard.id, 'actionItems', itemContent, ' (AI Suggested)');
         }
@@ -239,31 +270,24 @@ export default function BoardPage() {
   }, [toast]);
 
 
-  if (isStoreUserLoading) { // Rely on Zustand's loading flag
+  if (isStoreUserLoading) { 
     return <div className="text-center py-10">Loading user data...</div>;
   }
 
   if (!user) {
-    // UserProvider should handle showing UserSetupDialog
-    // This is a fallback or could indicate an issue if UserSetupDialog isn't shown
     return <div className="text-center py-10">User not set up. Please wait or go to home page. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
   
-  // After user is loaded, check for board
-  // currentBoard will be null if boards are still loading OR if board not found
+  const isLoadingBoards = useBoardStore.getState().isBoardsLoading;
+  if (isLoadingBoards && !currentBoard) { // If boards are loading AND we don't have this board yet
+     return <div className="text-center py-10">Loading board data...</div>;
+  }
+  
   if (!currentBoard) {
-      // If boards are still loading (isBoardsLoading from store), show loading.
-      // This is implicit as currentBoard depends on 'boards' from store
-      const isLoadingBoards = useBoardStore.getState().isBoardsLoading;
-      if (isLoadingBoards) {
-         return <div className="text-center py-10">Loading board data...</div>;
-      }
-      // If not loading boards and currentBoard is still null, then board not found.
-      return <div className="text-center py-10">Board not found. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
+      return <div className="text-center py-10">Board not found or not yet loaded. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
   
   if (!currentBoard.columns || !currentBoard.cards) {
-    // This specific check might be redundant if currentBoard derivation is robust
     return <div className="text-center py-10">Board data is incomplete. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
 
@@ -312,6 +336,7 @@ export default function BoardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-1 min-w-[1200px] md:min-w-full px-1">
           {columnIds.map(columnId => {
             const columnConfig = DEFAULT_COLUMNS_CONFIG[columnId];
+            // Ensure columnData is always an object, even if currentBoard.columns[columnId] is initially undefined
             const columnData = currentBoard.columns![columnId] || { ...INITIAL_COLUMNS_DATA[columnId], cardIds: [] };
             const cardIdsForColumn = Array.isArray(columnData.cardIds) ? columnData.cardIds : [];
             
@@ -333,7 +358,7 @@ export default function BoardPage() {
                 onDeleteCard={handleDeleteCard}
                 onUpvoteCard={handleUpvoteCard}
                 onDragEnd={handleDragEnd}
-                currentUserId={user?.id || ''} // This is fine for read-only display if RetroCard uses store for canEdit etc.
+                currentUserId={user?.id || ''}
                 draggedItem={draggedItem}
                 setDraggedItem={setDraggedItem}
               />
@@ -345,3 +370,4 @@ export default function BoardPage() {
     </div>
   );
 }
+
