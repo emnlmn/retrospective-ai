@@ -26,15 +26,16 @@ export function addBoardToDB(title: string, userId: string, userName: string): B
     cards: {},
     columns: JSON.parse(JSON.stringify(INITIAL_COLUMNS_DATA)), // Ensure a deep copy
     createdAt: new Date().toISOString(),
-    // userId, // If you want to associate boards with users directly on the board object
-    // userName,
   };
-  boards.unshift(newBoard); // Add to the beginning like current store
-  // Note: For 'addBoardToDB', emitting an event for all clients to refresh their list of boards
-  // is more complex as it's not tied to a specific boardId for SSE.
-  // A general 'boardsListUpdated' event could be used if a global SSE channel existed.
-  // For now, individual board updates are prioritized.
-  return JSON.parse(JSON.stringify(newBoard));
+  boards.unshift(newBoard); 
+  
+  // Emit event for real-time update
+  const boardForEmit = getBoardById(newBoard.id); // Get a fresh clone for emitting
+  if (boardForEmit) {
+    emitter.emit(`boardUpdate:${newBoard.id}`, boardForEmit);
+  }
+  
+  return JSON.parse(JSON.stringify(newBoard)); // Return a clone to the caller
 }
 
 export function deleteBoardFromDB(boardId: string): boolean {
@@ -42,10 +43,6 @@ export function deleteBoardFromDB(boardId: string): boolean {
   boards = boards.filter(b => b.id !== boardId);
   const deleted = boards.length < initialLength;
   if (deleted) {
-    // Emit a generic event or handle differently, as the board SSE channel will be gone.
-    // Perhaps clients subscribed to a list of boards could be notified.
-    // For simplicity, we'll just log this. A more complex system might emit `boardDeleted:${boardId}`.
-    console.log(`Board ${boardId} deleted. SSE listeners for this board will no longer receive updates.`);
     emitter.emit(`boardUpdate:${boardId}`, null); // Signal deletion with null
   }
   return deleted;
@@ -144,8 +141,7 @@ export function moveCardInDB(
   const boardIndex = boards.findIndex(b => b.id === boardId);
   if (boardIndex === -1) return null;
 
-  // Operate on a mutable copy for internal logic, then emit the updated state
-  const board = boards[boardIndex];
+  const board = boards[boardIndex]; // Direct reference for mutation
   
   const draggedCard = board.cards[draggedCardId];
   if (!draggedCard) return null;
@@ -156,8 +152,6 @@ export function moveCardInDB(
     if (!targetCard || !board.columns[destColumnId].cardIds.includes(mergeTargetCardId)) return null;
 
     targetCard.content = `${targetCard.content}\n----\n${draggedCard.content}`;
-    // Consider merging upvotes or other properties if necessary
-    // Combine upvotes, ensuring uniqueness
     const combinedUpvotes = new Set([...targetCard.upvotes, ...draggedCard.upvotes]);
     targetCard.upvotes = Array.from(combinedUpvotes);
 
@@ -169,16 +163,16 @@ export function moveCardInDB(
     const destCol = board.columns[destColumnId];
     const originalSourceIndex = sourceCol.cardIds.indexOf(draggedCardId);
 
-    if (originalSourceIndex === -1) return null; // Card not found in source
+    if (originalSourceIndex === -1) return null; 
 
-    sourceCol.cardIds.splice(originalSourceIndex, 1); // Remove from source
+    sourceCol.cardIds.splice(originalSourceIndex, 1); 
 
     let effectiveDestinationIndex = destinationIndex;
     if (sourceColumnId === destColumnId && originalSourceIndex < destinationIndex) {
       effectiveDestinationIndex = Math.max(0, destinationIndex - 1);
     }
     effectiveDestinationIndex = Math.max(0, Math.min(effectiveDestinationIndex, destCol.cardIds.length));
-    destCol.cardIds.splice(effectiveDestinationIndex, 0, draggedCardId); // Add to destination
+    destCol.cardIds.splice(effectiveDestinationIndex, 0, draggedCardId); 
   }
 
   // Update orders for all affected columns
@@ -190,13 +184,10 @@ export function moveCardInDB(
     });
   });
   
-  const updatedBoard = getBoardById(boardId); // Get a fresh clone
-  if (updatedBoard) {
-    // boards[boardIndex] = updatedBoard; // This line caused a bug, getBoardById already returns a clone
-                                      // The direct mutation to 'board' above is sufficient for in-memory.
-                                      // The important part is emitting the *cloned* updated board.
-    emitter.emit(`boardUpdate:${boardId}`, updatedBoard);
-    return updatedBoard; // Return the cloned, updated board
+  const updatedBoardForEmit = getBoardById(boardId); // Get a fresh clone for emitting
+  if (updatedBoardForEmit) {
+    emitter.emit(`boardUpdate:${boardId}`, updatedBoardForEmit);
+    return updatedBoardForEmit; 
   }
   return null;
 }
