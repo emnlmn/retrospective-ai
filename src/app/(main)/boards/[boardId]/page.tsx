@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'next';
 import { useParams, useRouter } from 'next/navigation';
 import type { BoardData, CardData, ColumnData, ColumnId } from '@/lib/types';
 import { DEFAULT_COLUMNS_CONFIG, INITIAL_COLUMNS_DATA } from '@/lib/types';
@@ -22,41 +22,73 @@ export default function BoardPage() {
   const params = useParams();
   const boardId = params.boardId as string;
   
-  const { user } = useBoardStore((state) => ({ user: state.user }));
+  const { user, isUserLoading: isStoreUserLoading } = useBoardStore((state) => ({
+    user: state.user,
+    isUserLoading: state.isUserLoading,
+  }));
   const storeActions = useBoardActions();
   const currentBoardFromStore = useBoardStore(state => state.boards.find(b => b.id === boardId));
 
   const { toast } = useToast();
 
-  const [isLoading, setIsLoading] = useState(true); // Local loading for this page/component
   const [isAISuggesting, setIsAISuggesting] = useState(false);
   const [draggedItem, setDraggedItem] = useState<DraggedItemType | null>(null);
   
-  // The currentBoard is now derived directly from the store for display
-  const currentBoard = useMemo(() => {
-    if (!currentBoardFromStore) return null;
-    // Basic sanitization or transformation if needed, but store should hold valid data
-    const board = { ...currentBoardFromStore };
-    board.columns = board.columns || INITIAL_COLUMNS_DATA;
-    board.cards = board.cards || {};
-    (Object.keys(board.columns) as ColumnId[]).forEach(colId => {
-        if (!board.columns[colId]) {
-            board.columns[colId] = { ...INITIAL_COLUMNS_DATA[colId], cardIds: [] };
-        }
-        if (!Array.isArray(board.columns[colId].cardIds)) {
-            board.columns[colId].cardIds = [];
-        }
-    });
-    return board;
-  }, [currentBoardFromStore]);
-
 
   useEffect(() => {
     if (boardId) {
       storeActions.setCurrentBoardId(boardId);
     }
-    setIsLoading(false); // Assuming store handles its own loading state for data fetching
   }, [boardId, storeActions]);
+
+  const currentBoard = useMemo(() => {
+    if (!currentBoardFromStore) return null;
+
+    const board = { ...currentBoardFromStore }; // Shallow copy of the board
+
+    // Ensure cards object exists
+    board.cards = board.cards ? { ...board.cards } : {}; // Make a copy if it exists
+
+    // Deep copy and sanitize columns
+    const sanitizedColumns: BoardData['columns'] = {
+        wentWell: {
+            ...INITIAL_COLUMNS_DATA.wentWell, // Start with default structure (includes title)
+            // Override with existing cardIds if valid
+            cardIds: currentBoardFromStore.columns?.wentWell?.cardIds && Array.isArray(currentBoardFromStore.columns.wentWell.cardIds)
+                ? [...currentBoardFromStore.columns.wentWell.cardIds] // Copy array
+                : [],
+        },
+        toImprove: {
+            ...INITIAL_COLUMNS_DATA.toImprove,
+            cardIds: currentBoardFromStore.columns?.toImprove?.cardIds && Array.isArray(currentBoardFromStore.columns.toImprove.cardIds)
+                ? [...currentBoardFromStore.columns.toImprove.cardIds]
+                : [],
+        },
+        actionItems: {
+            ...INITIAL_COLUMNS_DATA.actionItems,
+            cardIds: currentBoardFromStore.columns?.actionItems?.cardIds && Array.isArray(currentBoardFromStore.columns.actionItems.cardIds)
+                ? [...currentBoardFromStore.columns.actionItems.cardIds]
+                : [],
+        },
+    };
+    board.columns = sanitizedColumns;
+    
+    // Ensure all cards referenced in cardIds actually exist in board.cards
+    // and have a valid order. This step also ensures cards have a valid order if newly added or moved.
+    (Object.keys(board.columns) as ColumnId[]).forEach(colId => {
+        const column = board.columns[colId];
+        column.cardIds = column.cardIds.filter(cardId => board.cards[cardId] !== undefined); // Remove stale card IDs
+        column.cardIds.forEach((cardId, index) => {
+            if (board.cards[cardId]) {
+                board.cards[cardId] = { ...board.cards[cardId], order: index };
+            }
+        });
+    });
+
+
+    return board;
+  }, [currentBoardFromStore]);
+
 
   const handleAddCard = useCallback((columnId: ColumnId, content: string) => {
     if (!currentBoard || !user) return;
@@ -91,11 +123,11 @@ export default function BoardPage() {
       return;
     }
     if (!currentBoard.cards || !currentBoard.cards[draggedCardId]) {
-      console.error("Dragged card is missing from board cards record.");
+      console.error("Dragged card is missing from board cards record or board.cards is undefined.");
       setDraggedItem(null);
       return;
     }
-
+  
     storeActions.moveCard(
       currentBoard.id,
       draggedCardId,
@@ -104,18 +136,20 @@ export default function BoardPage() {
       destinationIndexInDropTarget,
       mergeTargetCardId
     );
-    setDraggedItem(null);
+    setDraggedItem(null); // Reset dragged item in BoardPage
   }, [currentBoard, storeActions]);
 
 
   const handleAISuggestions = useCallback(async () => {
-    if (!currentBoard || !user) return;
+    if (!currentBoard || !user || !currentBoard.columns || !currentBoard.cards) {
+        toast({ title: "Error", description: "Board data is not fully loaded for AI suggestions.", variant: "destructive" });
+        return;
+    }
     setIsAISuggesting(true);
     try {
-      const toImproveColumn = currentBoard.columns?.toImprove || { ...INITIAL_COLUMNS_DATA.toImprove, cardIds: [] };
-      const currentCards = currentBoard.cards || {};
+      const toImproveColumn = currentBoard.columns.toImprove;
       const toImproveCardsContent = (toImproveColumn.cardIds || [])
-        .map(cardId => currentCards[cardId]?.content)
+        .map(cardId => currentBoard.cards![cardId]?.content) // Added null check for cards
         .filter(content => !!content)
         .join('\n- ');
 
@@ -130,7 +164,6 @@ export default function BoardPage() {
       
       if (result.actionItems && result.actionItems.length > 0) {
         result.actionItems.forEach(itemContent => {
-          // The store action will handle creating the card with the correct user ID and name
           storeActions.addCard(currentBoard.id, 'actionItems', itemContent, ' (AI Suggested)');
         });
         toast({ title: "AI Suggestions Added", description: `${result.actionItems.length} action items added.` });
@@ -145,12 +178,25 @@ export default function BoardPage() {
   }, [currentBoard, user, storeActions, toast]);
 
 
-  if (isLoading || !user) { // isLoading is local page loading, user check relies on store
+  if (isStoreUserLoading) {
     return <div className="text-center py-10">Loading board...</div>;
   }
+
+  if (!user) {
+    // This state should ideally be handled by UserProvider, which shows a setup dialog.
+    // If UserProvider is correctly implemented, this state might be very brief or not hit.
+    return <div className="text-center py-10">User not available. Please go to the home page to set up your user. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
+  }
+
   if (!currentBoard) {
-    // This might happen if boardId is invalid or store hasn't loaded/found it yet
+    // This means the boardId from URL does not match any board in the store,
+    // or currentBoardFromStore was null/undefined.
     return <div className="text-center py-10">Board not found. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
+  }
+  
+  // Ensure currentBoard.columns and currentBoard.cards are defined before trying to access their properties
+  if (!currentBoard.columns || !currentBoard.cards) {
+    return <div className="text-center py-10">Board data is incomplete. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
 
   const columnIds = Object.keys(DEFAULT_COLUMNS_CONFIG) as ColumnId[];
@@ -193,14 +239,13 @@ export default function BoardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-1 min-w-[1200px] md:min-w-full px-1">
           {columnIds.map(columnId => {
             const columnConfig = DEFAULT_COLUMNS_CONFIG[columnId];
-            const boardColumns = currentBoard.columns || INITIAL_COLUMNS_DATA; // Ensure columns exist
-            const boardCards = currentBoard.cards || {}; // Ensure cards exist
-
-            const columnData = boardColumns[columnId] || { ...INITIAL_COLUMNS_DATA[columnId], cardIds: [] };
+            // Fallback to initial empty column structure if specific column data is somehow missing after sanitization
+            // Though `currentBoard.columns` should be fully sanitized by `useMemo`
+            const columnData = currentBoard.columns![columnId] || { ...INITIAL_COLUMNS_DATA[columnId], cardIds: [] };
             const cardIdsForColumn = Array.isArray(columnData.cardIds) ? columnData.cardIds : [];
             
             const cardsForColumn = cardIdsForColumn
-              .map(id => boardCards[id])
+              .map(id => currentBoard.cards![id]) // currentBoard.cards should be defined due to earlier checks
               .filter((card): card is CardData => !!card && typeof card.order === 'number') 
               .sort((a, b) => (a.order as number) - (b.order as number));
             
@@ -212,12 +257,12 @@ export default function BoardPage() {
                 columnId={columnId}
                 title={columnConfig.title}
                 cards={cardsForColumn}
-                onAddCard={handleAddCard} // These handlers now call store actions
+                onAddCard={handleAddCard}
                 onUpdateCard={handleUpdateCard}
                 onDeleteCard={handleDeleteCard}
                 onUpvoteCard={handleUpvoteCard}
                 onDragEnd={handleDragEnd}
-                currentUserId={user?.id || ''}
+                currentUserId={user?.id || ''} // user should be defined due to earlier checks
                 draggedItem={draggedItem}
                 setDraggedItem={setDraggedItem}
               />
