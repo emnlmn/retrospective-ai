@@ -7,7 +7,7 @@ import RetroCard from './RetroCard';
 import { Button } from '@/components/ui/button';
 import { PlusCircle } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
-import { Card as ShadCard, CardContent, CardFooter } from '@/components/ui/card';
+import { Card as ShadCard, CardContent, CardFooter } from '@/components/ui/card'; // Renamed Card to ShadCard to avoid conflict
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -100,6 +100,11 @@ export default function BoardColumnClient({
             const cardId = cardEl.dataset.cardId;
             if (!cardId) continue;
 
+            // Cannot merge with a card being edited by someone else, or with itself
+            const isCardBeingEditedByOther = editingCardId === cardId && cardId !== draggedItem.id;
+            if (isCardBeingEditedByOther) continue;
+
+
             const rect = cardWrapperEl.getBoundingClientRect(); 
             const clientY = e.clientY;
 
@@ -107,22 +112,23 @@ export default function BoardColumnClient({
             const topEdgeZoneEnd = rect.top + rect.height * edgeRatio;
             const bottomEdgeZoneStart = rect.bottom - rect.height * edgeRatio;
 
-            if (clientY < rect.top && i === 0) {
+            if (clientY < rect.top && i === 0) { // Cursor is above the very first card
                  newCalculatedIndex = 0;
                  potentialMergeId = null;
                  break;
             }
             
-            if (clientY >= rect.top && clientY < topEdgeZoneEnd) {
+            if (clientY >= rect.top && clientY < topEdgeZoneEnd) { // Top edge of the card
                 newCalculatedIndex = i;
                 potentialMergeId = null;
                 break;
-            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) {
-                if (cardId !== draggedItem.id && editingCardId !== cardId) { // Cannot merge with a card being edited
+            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) { // Middle of the card
+                if (cardId !== draggedItem.id) { // Cannot merge with itself
                     newCalculatedIndex = null; 
                     potentialMergeId = cardId;
                 } else { 
-                    potentialMergeId = null;
+                    // If dragging over itself, still calculate placeholder for repositioning
+                    potentialMergeId = null; 
                     if (clientY < rect.top + rect.height / 2) {
                         newCalculatedIndex = i;
                     } else {
@@ -130,13 +136,13 @@ export default function BoardColumnClient({
                     }
                 }
                 break;
-            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) {
+            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) { // Bottom edge of the card
                 newCalculatedIndex = i + 1;
                 potentialMergeId = null;
                 break;
             }
             
-            if (i === cardElements.length - 1 && clientY >= rect.bottom) {
+            if (i === cardElements.length - 1 && clientY >= rect.bottom) { // Cursor is below the very last card
                  newCalculatedIndex = cards.length;
                  potentialMergeId = null;
             }
@@ -164,9 +170,13 @@ export default function BoardColumnClient({
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, placeholderIndex, undefined);
     }
     else { 
+        // Fallback if for some reason both mergeTargetId and placeholderIndex are null
+        // This might happen if dragging into an empty column where cardElements is 0
+        // or other edge cases not fully covered by handleListAreaDragOver.
+        // Default to adding at the end, or start if empty.
         const listElement = e.currentTarget;
         const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
-        let finalFallbackIndex = cards.length;
+        let finalFallbackIndex = cards.length; // Default to end
          if (cardElements.length > 0) {
             for (let i = 0; i < cardElements.length; i++) {
                 const cardEl = cardElements[i];
@@ -177,7 +187,7 @@ export default function BoardColumnClient({
                 }
             }
         } else {
-            finalFallbackIndex = 0;
+            finalFallbackIndex = 0; // If column is empty, drop at index 0
         }
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, finalFallbackIndex, undefined);
     }
@@ -216,14 +226,14 @@ export default function BoardColumnClient({
       </div>
 
       {isAddingCard && isBoardConfirmedValid && (
-        <div className="mb-2 px-1">
-          <ShadCard className="bg-card/80 shadow-md">
-            <CardContent className="p-2">
+        <div className="mb-3 px-1">
+          <ShadCard className="bg-card/90 shadow-sm border border-border rounded-lg min-h-[80px] flex flex-col">
+            <CardContent className="p-2 flex-grow">
               <Textarea
                 placeholder="Enter card details..."
                 value={newCardContent}
                 onChange={(e) => setNewCardContent(e.target.value)}
-                className="w-full min-h-[70px] text-sm bg-background/70 focus:ring-primary border-input"
+                className="w-full min-h-[70px] text-sm bg-transparent border-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 resize-none text-card-foreground whitespace-pre-wrap py-1"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -272,7 +282,7 @@ export default function BoardColumnClient({
                       onDragStartItem={handleDragStart}
                       isMergeTarget={card.id === mergeTargetId && card.id !== draggedItem?.id && editingCardId !== card.id}
                       isBoardConfirmedValid={isBoardConfirmedValid}
-                      isDraggable={!isAddingCard && editingCardId !== card.id}
+                      isDraggable={!isAddingCard && editingCardId !== card.id} // Ensure card isn't draggable if its own column is adding a card, or if any card is being edited
                       editingCardId={editingCardId}
                       setEditingCardId={setEditingCardId}
                     />
@@ -294,3 +304,4 @@ export default function BoardColumnClient({
     </div>
   );
 }
+
