@@ -38,7 +38,7 @@ interface RetroCardProps {
   onDragStartItem: (card: CardData, sourceColumnId: ColumnId) => void;
   isMergeTarget?: boolean;
   isBoardConfirmedValid: boolean;
-  isDraggable: boolean; // New prop
+  isDraggable: boolean;
 }
 
 const RetroCard = memo(function RetroCard({
@@ -50,7 +50,7 @@ const RetroCard = memo(function RetroCard({
     onDragStartItem,
     isMergeTarget = false,
     isBoardConfirmedValid,
-    isDraggable, // Use new prop
+    isDraggable,
 }: RetroCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(card.content);
@@ -150,7 +150,7 @@ const RetroCard = memo(function RetroCard({
         <TooltipTrigger asChild>
             <DropdownMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
                 <UserIcon className="mr-2 h-3.5 w-3.5" />
-                Author: <span className="truncate ml-1">{card.userName}</span>
+                Author: <span className="truncate max-w-[100px] hover:underline">{card.userName}</span>
             </DropdownMenuItem>
         </TooltipTrigger>
         <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
@@ -161,7 +161,7 @@ const RetroCard = memo(function RetroCard({
         <TooltipTrigger asChild>
             <DropdownMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
                 <CalendarDays className="mr-2 h-3.5 w-3.5" />
-                Created: <span className="truncate ml-1">{relativeDate}</span>
+                Created: <span className="truncate max-w-[100px] hover:underline">{relativeDate}</span>
             </DropdownMenuItem>
         </TooltipTrigger>
         <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
@@ -199,7 +199,7 @@ const RetroCard = memo(function RetroCard({
         <TooltipTrigger asChild>
             <ContextMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
                 <UserIcon className="mr-2 h-3.5 w-3.5" />
-                Author: <span className="truncate ml-1">{card.userName}</span>
+                Author: <span className="truncate max-w-[100px] hover:underline">{card.userName}</span>
             </ContextMenuItem>
         </TooltipTrigger>
         <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
@@ -210,7 +210,7 @@ const RetroCard = memo(function RetroCard({
         <TooltipTrigger asChild>
             <ContextMenuItem disabled className="opacity-70 cursor-default focus:bg-transparent">
                 <CalendarDays className="mr-2 h-3.5 w-3.5" />
-                Created: <span className="truncate ml-1">{relativeDate}</span>
+                Created: <span className="truncate max-w-[100px] hover:underline">{relativeDate}</span>
             </ContextMenuItem>
         </TooltipTrigger>
         <TooltipContent side="right" align="start" className="bg-popover text-popover-foreground border shadow-md rounded-md p-2 text-xs">
@@ -300,8 +300,9 @@ const RetroCard = memo(function RetroCard({
                 variant="ghost"
                 size="icon-sm"
                 className={cn(
-                  "h-6 w-6 p-0.5 hover:bg-accent/50",
-                  hasUpvoted && "text-primary hover:text-primary/80"
+                  "h-6 w-6 p-0.5 hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity duration-150",
+                  hasUpvoted && "text-primary hover:text-primary/80 group-hover:opacity-100", // Ensure opacity is 100 if upvoted and hovered
+                  !isBoardConfirmedValid || isEditing ? "cursor-not-allowed" : "cursor-pointer"
                 )}
                 onClick={handleDirectUpvote}
                 aria-label={hasUpvoted ? 'Remove upvote' : 'Upvote'}
@@ -309,7 +310,7 @@ const RetroCard = memo(function RetroCard({
               >
                 <ThumbsUp className={cn("h-3.5 w-3.5")} />
               </Button>
-              <span>{card.upvotes.length > 0 ? card.upvotes.length : ''}</span>
+              <span>{card.upvotes.length}</span>
             </div>
           )}
         </Card>
@@ -324,3 +325,4 @@ const RetroCard = memo(function RetroCard({
 });
 
 export default RetroCard;
+
