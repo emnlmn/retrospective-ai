@@ -7,7 +7,7 @@ import type { BoardData, CardData, ColumnData, ColumnId } from '@/lib/types';
 import { DEFAULT_COLUMNS_CONFIG, INITIAL_COLUMNS_DATA } from '@/lib/types';
 import BoardColumnClient from '@/components/board/BoardColumnClient';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Wand2 } from 'lucide-react';
+import { ArrowLeft, Wand2, Share2 } from 'lucide-react';
 import Link from 'next/link';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { suggestActionItems, SuggestActionItemsInput } from '@/ai/flows/suggest-action-items';
@@ -22,12 +22,13 @@ export default function BoardPage() {
   const params = useParams();
   const boardId = params.boardId as string;
   
-  const { user, isUserLoading: isStoreUserLoading } = useBoardStore((state) => ({
+  const { user, isUserLoading: isStoreUserLoading, boards } = useBoardStore((state) => ({
     user: state.user,
     isUserLoading: state.isUserLoading,
+    boards: state.boards,
   }));
   const storeActions = useBoardActions();
-  const currentBoardFromStore = useBoardStore(state => state.boards.find(b => b.id === boardId));
+  const currentBoardFromStore = useMemo(() => boards.find(b => b.id === boardId), [boards, boardId]);
 
   const { toast } = useToast();
 
@@ -44,47 +45,45 @@ export default function BoardPage() {
   const currentBoard = useMemo(() => {
     if (!currentBoardFromStore) return null;
 
-    const board = { ...currentBoardFromStore }; // Shallow copy of the board
+    const board = { ...currentBoardFromStore }; 
+    board.cards = board.cards ? { ...board.cards } : {}; 
 
-    // Ensure cards object exists
-    board.cards = board.cards ? { ...board.cards } : {}; // Make a copy if it exists
-
-    // Deep copy and sanitize columns
     const sanitizedColumns: BoardData['columns'] = {
         wentWell: {
-            ...INITIAL_COLUMNS_DATA.wentWell, // Start with default structure (includes title)
-            // Override with existing cardIds if valid
-            cardIds: currentBoardFromStore.columns?.wentWell?.cardIds && Array.isArray(currentBoardFromStore.columns.wentWell.cardIds)
-                ? [...currentBoardFromStore.columns.wentWell.cardIds] // Copy array
+            ...(currentBoardFromStore.columns?.wentWell || INITIAL_COLUMNS_DATA.wentWell),
+            cardIds: Array.isArray(currentBoardFromStore.columns?.wentWell?.cardIds)
+                ? [...currentBoardFromStore.columns.wentWell.cardIds] 
                 : [],
         },
         toImprove: {
-            ...INITIAL_COLUMNS_DATA.toImprove,
-            cardIds: currentBoardFromStore.columns?.toImprove?.cardIds && Array.isArray(currentBoardFromStore.columns.toImprove.cardIds)
+            ...(currentBoardFromStore.columns?.toImprove || INITIAL_COLUMNS_DATA.toImprove),
+            cardIds: Array.isArray(currentBoardFromStore.columns?.toImprove?.cardIds)
                 ? [...currentBoardFromStore.columns.toImprove.cardIds]
                 : [],
         },
         actionItems: {
-            ...INITIAL_COLUMNS_DATA.actionItems,
-            cardIds: currentBoardFromStore.columns?.actionItems?.cardIds && Array.isArray(currentBoardFromStore.columns.actionItems.cardIds)
+            ...(currentBoardFromStore.columns?.actionItems || INITIAL_COLUMNS_DATA.actionItems),
+            cardIds: Array.isArray(currentBoardFromStore.columns?.actionItems?.cardIds)
                 ? [...currentBoardFromStore.columns.actionItems.cardIds]
                 : [],
         },
     };
+    
+    // Ensure titles are from DEFAULT_COLUMNS_CONFIG if not present
+    (Object.keys(sanitizedColumns) as ColumnId[]).forEach(colId => {
+        sanitizedColumns[colId].title = DEFAULT_COLUMNS_CONFIG[colId].title;
+    });
     board.columns = sanitizedColumns;
     
-    // Ensure all cards referenced in cardIds actually exist in board.cards
-    // and have a valid order. This step also ensures cards have a valid order if newly added or moved.
     (Object.keys(board.columns) as ColumnId[]).forEach(colId => {
         const column = board.columns[colId];
-        column.cardIds = column.cardIds.filter(cardId => board.cards[cardId] !== undefined); // Remove stale card IDs
+        column.cardIds = column.cardIds.filter(cardId => board.cards[cardId] !== undefined);
         column.cardIds.forEach((cardId, index) => {
             if (board.cards[cardId]) {
                 board.cards[cardId] = { ...board.cards[cardId], order: index };
             }
         });
     });
-
 
     return board;
   }, [currentBoardFromStore]);
@@ -136,7 +135,7 @@ export default function BoardPage() {
       destinationIndexInDropTarget,
       mergeTargetCardId
     );
-    setDraggedItem(null); // Reset dragged item in BoardPage
+    setDraggedItem(null); 
   }, [currentBoard, storeActions]);
 
 
@@ -149,7 +148,7 @@ export default function BoardPage() {
     try {
       const toImproveColumn = currentBoard.columns.toImprove;
       const toImproveCardsContent = (toImproveColumn.cardIds || [])
-        .map(cardId => currentBoard.cards![cardId]?.content) // Added null check for cards
+        .map(cardId => currentBoard.cards![cardId]?.content) 
         .filter(content => !!content)
         .join('\n- ');
 
@@ -177,24 +176,38 @@ export default function BoardPage() {
     setIsAISuggesting(false);
   }, [currentBoard, user, storeActions, toast]);
 
+  const handleShareBoard = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    const boardUrl = window.location.href;
+    try {
+      await navigator.clipboard.writeText(boardUrl);
+      toast({
+        title: "Link Copied!",
+        description: "Board link copied to clipboard.",
+      });
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      toast({
+        title: "Error",
+        description: "Could not copy link to clipboard.",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
+
 
   if (isStoreUserLoading) {
     return <div className="text-center py-10">Loading board...</div>;
   }
 
   if (!user) {
-    // This state should ideally be handled by UserProvider, which shows a setup dialog.
-    // If UserProvider is correctly implemented, this state might be very brief or not hit.
     return <div className="text-center py-10">User not available. Please go to the home page to set up your user. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
 
   if (!currentBoard) {
-    // This means the boardId from URL does not match any board in the store,
-    // or currentBoardFromStore was null/undefined.
     return <div className="text-center py-10">Board not found. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
   
-  // Ensure currentBoard.columns and currentBoard.cards are defined before trying to access their properties
   if (!currentBoard.columns || !currentBoard.cards) {
     return <div className="text-center py-10">Board data is incomplete. <Link href="/"><Button variant="link">Go Home</Button></Link></div>;
   }
@@ -212,40 +225,43 @@ export default function BoardPage() {
             {currentBoard.title}
             </h1>
         </div>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" disabled={isAISuggesting}>
-              <Wand2 className="mr-2 h-5 w-5" /> {isAISuggesting ? 'Generating...' : 'Suggest Action Items (AI)'}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Use AI to Suggest Action Items?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will analyze the items in the "To Improve" column and suggest actionable steps. New cards will be added to the "Action Items" column.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleAISuggestions} disabled={isAISuggesting}>
-                {isAISuggesting ? 'Generating...' : 'Proceed'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleShareBoard}>
+            <Share2 className="mr-2 h-5 w-5" /> Share Board
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={isAISuggesting}>
+                <Wand2 className="mr-2 h-5 w-5" /> {isAISuggesting ? 'Generating...' : 'Suggest Action Items (AI)'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Use AI to Suggest Action Items?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will analyze the items in the "To Improve" column and suggest actionable steps. New cards will be added to the "Action Items" column.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleAISuggestions} disabled={isAISuggesting}>
+                  {isAISuggesting ? 'Generating...' : 'Proceed'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
 
       <ScrollArea className="flex-grow -mx-1">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-1 min-w-[1200px] md:min-w-full px-1">
           {columnIds.map(columnId => {
             const columnConfig = DEFAULT_COLUMNS_CONFIG[columnId];
-            // Fallback to initial empty column structure if specific column data is somehow missing after sanitization
-            // Though `currentBoard.columns` should be fully sanitized by `useMemo`
             const columnData = currentBoard.columns![columnId] || { ...INITIAL_COLUMNS_DATA[columnId], cardIds: [] };
             const cardIdsForColumn = Array.isArray(columnData.cardIds) ? columnData.cardIds : [];
             
             const cardsForColumn = cardIdsForColumn
-              .map(id => currentBoard.cards![id]) // currentBoard.cards should be defined due to earlier checks
+              .map(id => currentBoard.cards![id]) 
               .filter((card): card is CardData => !!card && typeof card.order === 'number') 
               .sort((a, b) => (a.order as number) - (b.order as number));
             
@@ -262,7 +278,7 @@ export default function BoardPage() {
                 onDeleteCard={handleDeleteCard}
                 onUpvoteCard={handleUpvoteCard}
                 onDragEnd={handleDragEnd}
-                currentUserId={user?.id || ''} // user should be defined due to earlier checks
+                currentUserId={user?.id || ''}
                 draggedItem={draggedItem}
                 setDraggedItem={setDraggedItem}
               />
@@ -274,3 +290,4 @@ export default function BoardPage() {
     </div>
   );
 }
+
