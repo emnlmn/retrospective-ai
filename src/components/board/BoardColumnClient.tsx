@@ -95,22 +95,22 @@ export default function BoardColumnClient({
             const topEdgeZoneEnd = rect.top + rect.height * edgeRatio;
             const bottomEdgeZoneStart = rect.bottom - rect.height * edgeRatio;
 
-            if (clientY < rect.top && i === 0) { // Case: Above the very first card
+            if (clientY < rect.top && i === 0) { 
                  newCalculatedIndex = 0;
                  potentialMergeId = null;
                  break;
             }
             
-            if (clientY >= rect.top && clientY < topEdgeZoneEnd) { // Top edge for positioning
+            if (clientY >= rect.top && clientY < topEdgeZoneEnd) { 
                 newCalculatedIndex = i;
                 potentialMergeId = null;
                 break;
-            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) { // Middle zone for merging
+            } else if (clientY >= topEdgeZoneEnd && clientY < bottomEdgeZoneStart) { 
                 if (cardId !== draggedItem.id) { 
                     newCalculatedIndex = null; 
-                    potentialMergeId = cardId; // Set as potential merge target
-                } else { // Dragging over itself in the middle zone - treat as positioning
-                    potentialMergeId = null; // Not a merge target
+                    potentialMergeId = cardId; 
+                } else { 
+                    potentialMergeId = null; 
                     if (clientY < rect.top + rect.height / 2) {
                         newCalculatedIndex = i;
                     } else {
@@ -118,13 +118,13 @@ export default function BoardColumnClient({
                     }
                 }
                 break;
-            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) { // Bottom edge for positioning
+            } else if (clientY >= bottomEdgeZoneStart && clientY < rect.bottom) { 
                 newCalculatedIndex = i + 1;
                 potentialMergeId = null;
                 break;
             }
             
-            if (i === cardElements.length - 1 && clientY >= rect.bottom) { // Case: Below the very last card
+            if (i === cardElements.length - 1 && clientY >= rect.bottom) { 
                  newCalculatedIndex = cards.length; 
                  potentialMergeId = null;
             }
@@ -141,15 +141,12 @@ export default function BoardColumnClient({
     if (!draggedItem) return;
 
     if (mergeTargetId && mergeTargetId !== draggedItem.id) {
-        // If mergeTargetId is set, prioritize merge operation
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, -1, mergeTargetId);
     }
     else if (placeholderIndex !== null) {
-        // Otherwise, if placeholderIndex is set, perform positioning
         onDragEnd(draggedItem.id, draggedItem.sourceColumnId, columnId, placeholderIndex, undefined);
     }
     else {
-        // Fallback positioning if neither mergeTarget nor placeholder is explicitly set (e.g., dropping in an empty column with no cards)
         const listElement = e.currentTarget;
         const cardElements = Array.from(listElement.querySelectorAll<HTMLElement>('[data-card-id]'));
         let finalFallbackIndex = cards.length; 
@@ -170,7 +167,7 @@ export default function BoardColumnClient({
 
     setPlaceholderIndex(null);
     setMergeTargetId(null);
-    setDraggedItem(null);
+    setDraggedItem(null); 
   }, [draggedItem, cards, columnId, onDragEnd, placeholderIndex, mergeTargetId, setDraggedItem]);
 
   const handleListAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -188,7 +185,7 @@ export default function BoardColumnClient({
             <Button
               variant="ghost"
               size="icon"
-              className="text-muted-foreground hover:text-accent-foreground"
+              className="text-muted-foreground hover:text-accent-foreground hover:bg-accent"
               onClick={() => setIsAddingCard(true)}
               aria-label="Add new card"
             >
@@ -231,7 +228,7 @@ export default function BoardColumnClient({
         <ScrollArea className="flex-grow" style={{ maxHeight: 'calc(100vh - 260px)'}}>
           <div
             className={cn(
-              "space-y-2 px-1 pt-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative"
+              "space-y-3 px-1 pt-1 pb-1 min-h-[100px] rounded-md transition-all duration-150 relative"
             )}
             onDragOver={handleListAreaDragOver}
             onDrop={handleListAreaDrop}
@@ -248,7 +245,7 @@ export default function BoardColumnClient({
                   onUpdate={onUpdateCard}
                   onDelete={onDeleteCard}
                   onUpvote={onUpvoteCard}
-                  currentUserId={currentUserId}
+                  currentUserId={currentUserId} // This prop is not used in RetroCard anymore due to Zustand
                   onDragStartItem={handleDragStart}
                   isMergeTarget={card.id === mergeTargetId && card.id !== draggedItem?.id}
                 />
@@ -260,7 +257,7 @@ export default function BoardColumnClient({
             {cards.length === 0 && !isAddingCard && placeholderIndex === null && !mergeTargetId && (
               <p className="text-sm text-muted-foreground text-center pt-8">No cards yet.</p>
             )}
-            {cards.length === 0 && placeholderIndex === 0 && !mergeTargetId && ( // Placeholder for empty list
+            {cards.length === 0 && placeholderIndex === 0 && !mergeTargetId && ( 
                 <div className="h-[3px] my-1 bg-primary rounded-full w-full motion-safe:animate-pulse" data-placeholder />
             )}
           </div>
@@ -269,4 +266,3 @@ export default function BoardColumnClient({
     </div>
   );
 }
-
